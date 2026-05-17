@@ -70,7 +70,7 @@ export default function (pi: ExtensionAPI) {
   function updateStatus(ctx: ExtensionContext) {
     ctx.ui.setWidget(
       "snoop",
-      snoopEnabled ? ["  snoop mode"] : undefined,
+      snoopEnabled ? [" snoop mode"] : undefined,
       { placement: "aboveEditor" },
     );
   }
