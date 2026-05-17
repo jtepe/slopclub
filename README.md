@@ -1,10 +1,10 @@
 # Slopclub
 
-AI agent stuff like extensions, skills, prompts, <insert next best thing>.
+AI agent stuff like extensions, skills, prompts, \<insert next best thing\>.
 These are mostly targeted at [pi](https://github.com/earendil-works/pi), but
-some stuff can probably used with other harnesses.
+some stuff can probably be used with other harnesses.
 
-This strictly personal stuff but feel free to use it [License](./LICENSE).
+This strictly personal stuff but feel free to use it. ([License](./LICENSE)).
 
 ## Content
 
