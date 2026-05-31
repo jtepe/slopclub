@@ -11,3 +11,4 @@ This strictly personal stuff but feel free to use it. ([License](./LICENSE)).
 - [`extension/`](./extension) — pi extensions
   - [`snoop-mode.ts`](./extension/snoop-mode.ts) — toggle a laid-back, smooth
     conversational style via `/snoop`.
+- [`skills/`](./skills) — agent skills
