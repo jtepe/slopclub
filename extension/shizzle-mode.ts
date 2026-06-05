@@ -63,22 +63,60 @@ You MUST follow ALL of the above in every single response. This is NOT optional.
 Stay in character from the first word to the last. That's on everything.
 `;
 
+const ANIMATION_FRAMES = ["•", "◦", "·"];
+const SHIZZLE_TERM = "Shizzle Bot";
+
 export default function (pi: ExtensionAPI) {
   let snoopEnabled = false;
   let styleJustToggledOff = false;
+  let animationFrameIndex = 0;
+  let animationInterval: ReturnType<typeof setInterval> | null = null;
 
   function updateStatus(ctx: ExtensionContext) {
-    ctx.ui.setWidget(
-      "shizzlator",
-      snoopEnabled ? [" shizzlator"] : undefined,
-      { placement: "aboveEditor" },
-    );
+    if (!snoopEnabled) {
+      ctx.ui.setWidget("shizzlator", undefined, { placement: "aboveEditor" });
+      if (animationInterval) {
+        clearInterval(animationInterval);
+        animationInterval = null;
+      }
+      return;
+    }
+
+    if (!animationInterval) {
+      animationInterval = setInterval(() => {
+        if (!snoopEnabled) return;
+        const isIdle = ctx.isIdle();
+        if (isIdle) {
+          ctx.ui.setWidget(
+            "shizzlator",
+            [` ${SHIZZLE_TERM}`],
+            { placement: "aboveEditor" }
+          );
+        } else {
+          animationFrameIndex = (animationFrameIndex + 1) % ANIMATION_FRAMES.length;
+          ctx.ui.setWidget(
+            "shizzlator",
+            [` ${ANIMATION_FRAMES[animationFrameIndex]} ${SHIZZLE_TERM}`],
+            { placement: "aboveEditor" }
+          );
+        }
+      }, 300);
+
+      // Trigger initial render immediately
+      const isIdle = ctx.isIdle();
+      ctx.ui.setWidget(
+        "shizzlator",
+        isIdle ? [` ${SHIZZLE_TERM}`] : [` ${ANIMATION_FRAMES[0]} ${SHIZZLE_TERM}`],
+        { placement: "aboveEditor" }
+      );
+    }
   }
 
   function enable(ctx: ExtensionContext) {
     if (snoopEnabled) return;
     snoopEnabled = true;
     styleJustToggledOff = false;
+    animationFrameIndex = 0;
     updateStatus(ctx);
     pi.appendEntry(CUSTOM_TYPE, { enabled: true });
 
