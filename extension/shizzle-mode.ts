@@ -1,21 +1,21 @@
 /**
- * Snoop Mode Extension
+ * Shizzlator Mode Extension
  *
- * Toggle conversational style between normal and a laid-back snoop mode.
+ * Toggle conversational style between normal and a laid-back shizzle mode.
  * When enabled, the LLM speaks in a smooth, casual style and a marker
  * appears in the footer. When disabled, the marker disappears.
  *
  * Usage:
- * - `/snoop` - toggle snoop mode on/off
- * - `/snoop on` - force snoop mode on
- * - `/snoop off` - force snoop mode off
+ * - `/shizzle` - toggle shizzle mode on/off
+ * - `/shizzle on` - force shizzle mode on
+ * - `/shizzle off` - force shizzle mode off
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const CUSTOM_TYPE = "snoop-mode-state";
+const CUSTOM_TYPE = "shizzle-mode-state";
 
-const SNOOP_SYSTEM_PROMPT = `
+const SHIZZLE_SYSTEM_PROMPT = `
 ## Conversational Style
 
 You MUST adopt the following conversational style in ALL your responses.
@@ -69,8 +69,8 @@ export default function (pi: ExtensionAPI) {
 
   function updateStatus(ctx: ExtensionContext) {
     ctx.ui.setWidget(
-      "snoop",
-      snoopEnabled ? [" snoop mode"] : undefined,
+      "shizzlator",
+      snoopEnabled ? [" shizzlator"] : undefined,
       { placement: "aboveEditor" },
     );
   }
@@ -119,13 +119,13 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  // Inject snoop instructions into system prompt when mode is active.
+  // Inject shizzle instructions into system prompt when mode is active.
   // When mode was just toggled off, inject an explicit counter-instruction
   // so the LLM drops the style even if prior messages used it.
   pi.on("before_agent_start", async (event) => {
     if (snoopEnabled) {
       return {
-        systemPrompt: `${event.systemPrompt}\n\n${SNOOP_SYSTEM_PROMPT}`,
+        systemPrompt: `${event.systemPrompt}\n\n${SHIZZLE_SYSTEM_PROMPT}`,
       };
     }
 
@@ -135,9 +135,9 @@ export default function (pi: ExtensionAPI) {
         systemPrompt:
           `${event.systemPrompt}\n\n` +
           `## IMPORTANT - Style Reset\n` +
-          `You are NO LONGER in snoop mode. Respond in your normal, ` +
+          `From now on respond in your normal, ` +
           `professional conversational style. Do not use slang, casual ` +
-          `language, stretched words, or any snoop-mode mannerisms. ` +
+          `language, stretched words, or any laid-back mannerisms. ` +
           `Ignore any prior style instructions. Do not acknowledge this note.`,
       };
     }
@@ -158,8 +158,8 @@ export default function (pi: ExtensionAPI) {
     updateStatus(ctx);
   });
 
-  pi.registerCommand("snoop", {
-    description: "Toggle snoop conversation style",
+  pi.registerCommand("shizzle", {
+    description: "Toggle shizzle conversation style",
     handler: async (args, ctx) => {
       const arg = args?.trim().toLowerCase();
 
