@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.svg" width="160" alt="slopclub logo — a club suit melting into a puddle of goo">
+</p>
+
 # Slopclub
 
 AI agent stuff like extensions, skills, prompts, \<insert next best thing\>.
