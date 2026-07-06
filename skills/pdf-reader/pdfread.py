@@ -18,6 +18,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, NoReturn
 
 import pymupdf
 import pymupdf4llm
@@ -56,7 +57,7 @@ examples:
 """
 
 
-def die(msg: str) -> "NoReturn":  # noqa: F821
+def die(msg: str) -> NoReturn:
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -96,7 +97,9 @@ def parse_pages(spec: str | None, page_count: int) -> list[int]:
     return sorted(set(pages))
 
 
-def page_markdown(doc: pymupdf.Document, pages: list[int], image_dir: str) -> list[dict]:
+def page_markdown(
+    doc: pymupdf.Document, pages: list[int], image_dir: str
+) -> list[dict[str, Any]]:
     """Markdown chunks for 1-based `pages`, with figures written to image_dir."""
     return pymupdf4llm.to_markdown(
         doc,
@@ -117,11 +120,13 @@ def image_dims(path: str) -> str:
         return ""
 
 
-def replace_refs(text: str, page_no: int, collect: list | None = None) -> str:
+def replace_refs(
+    text: str, page_no: int, collect: list[tuple[str, str, str]] | None = None
+) -> str:
     """Replace markdown image refs with [image: pN-imgK WxHpx] placeholders."""
     counter = 0
 
-    def sub(m: re.Match) -> str:
+    def sub(m: re.Match[str]) -> str:
         nonlocal counter
         counter += 1
         img_id = f"p{page_no}-img{counter}"
@@ -133,14 +138,14 @@ def replace_refs(text: str, page_no: int, collect: list | None = None) -> str:
     return IMG_REF.sub(sub, text)
 
 
-def out_path(args, doc_path: str, name: str) -> Path:
+def out_path(args: argparse.Namespace, doc_path: str, name: str) -> Path:
     out_dir = Path(args.out) if args.out else Path(doc_path).resolve().parent
     if not out_dir.is_dir():
         die(f"output directory does not exist: {out_dir}")
     return out_dir / f"{Path(doc_path).stem}-{name}.png"
 
 
-def cmd_info(args) -> None:
+def cmd_info(args: argparse.Namespace) -> None:
     doc = open_pdf(args.file)
     meta = doc.metadata or {}
     print(f"file: {args.file}")
@@ -155,12 +160,11 @@ def cmd_info(args) -> None:
             print(f"{'  ' * (level - 1)}- {title} .... p{page}")
     else:
         print(
-            "\nno outline/TOC embedded; skim `text --pages 1-3` "
-            "to find the structure"
+            "\nno outline/TOC embedded; skim `text --pages 1-3` to find the structure"
         )
 
 
-def cmd_text(args) -> None:
+def cmd_text(args: argparse.Namespace) -> None:
     doc = open_pdf(args.file)
     pages = parse_pages(args.pages, doc.page_count)
     parts: list[str] = []
@@ -179,13 +183,13 @@ def cmd_text(args) -> None:
     print("\n\n".join(parts))
 
 
-def cmd_images(args) -> None:
+def cmd_images(args: argparse.Namespace) -> None:
     doc = open_pdf(args.file)
     pages = parse_pages(args.pages, doc.page_count)
     found = 0
     with tempfile.TemporaryDirectory() as tmp:
         for page_no, chunk in zip(pages, page_markdown(doc, pages, tmp)):
-            refs: list = []
+            refs: list[tuple[str, str, str]] = []
             replace_refs(chunk["text"], page_no, collect=refs)
             for img_id, _, dims in refs:
                 print(f"{img_id}\t{dims}")
@@ -194,7 +198,7 @@ def cmd_images(args) -> None:
         print(f"no figures found on page(s) {args.pages or 'all'}", file=sys.stderr)
 
 
-def cmd_image(args) -> None:
+def cmd_image(args: argparse.Namespace) -> None:
     m = IMG_ID.match(args.id)
     if not m:
         die(f"bad image ID {args.id!r}; expected form p<page>-img<n>, e.g. p12-img2")
@@ -204,7 +208,7 @@ def cmd_image(args) -> None:
         die(f"page {page_no} out of range; document has {doc.page_count} pages")
     with tempfile.TemporaryDirectory() as tmp:
         chunk = page_markdown(doc, [page_no], tmp)[0]
-        refs: list = []
+        refs: list[tuple[str, str, str]] = []
         replace_refs(chunk["text"], page_no, collect=refs)
         if index > len(refs):
             have = ", ".join(r[0] for r in refs) or "none"
@@ -215,7 +219,7 @@ def cmd_image(args) -> None:
     print(f"{dest}{'  ' + dims if dims else ''}")
 
 
-def cmd_render(args) -> None:
+def cmd_render(args: argparse.Namespace) -> None:
     doc = open_pdf(args.file)
     if args.page < 1 or args.page > doc.page_count:
         die(f"page {args.page} out of range; document has {doc.page_count} pages")
