@@ -13,10 +13,14 @@ Run `pdfread.py --help` for usage and a recommended workflow.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
 import re
 import shutil
+import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -25,6 +29,8 @@ import pymupdf4llm
 
 IMG_REF = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 IMG_ID = re.compile(r"^p(\d+)-img(\d+)$")
+
+INDEX_SCHEMA_VERSION = "1"
 
 EPILOG = """\
 image IDs:
@@ -39,7 +45,17 @@ scanned pages:
   Pages without a text layer are reported as such. View them with:
       pdfread.py render FILE PAGE
 
+keyword search:
+  pdfread.py search FILE "flux capacitor" ranks pages by BM25 and prints a
+  snippet per hit. The first search builds an index cached under
+  ~/.cache/pdfread (seconds, keyed by file content); later searches are
+  instant. Terms are ANDed and 'term*' matches prefixes; --raw passes the
+  query straight to SQLite FTS5 ("exact phrase", OR, NEAR). Only the text
+  layer is searched -- scanned pages are invisible to search.
+
 recommended workflow (context-efficient reading of large PDFs):
+  For pinpoint questions ("where is X discussed?"), run `search` and read
+  only the hit pages with `text --pages`. For broad synthesis:
   1. pdfread.py info FILE           -- page count and outline; plan page ranges
   2. Delegate each range to a subagent with instructions like:
        "Run `pdfread.py text FILE --pages 10-25` and answer <question> /
@@ -49,6 +65,7 @@ recommended workflow (context-efficient reading of large PDFs):
 
 examples:
   pdfread.py info report.pdf
+  pdfread.py search report.pdf "termination fee" --top 5
   pdfread.py text report.pdf --pages 1-5,12
   pdfread.py images report.pdf --pages 12
   pdfread.py image report.pdf p12-img2 --out /tmp
@@ -239,12 +256,136 @@ def cmd_render(args: argparse.Namespace) -> None:
     print(f"{dest}  {pix.width}x{pix.height}px")
 
 
+def index_path(pdf: Path) -> Path:
+    """Cache location for the FTS index, keyed by file content."""
+    digest = hashlib.sha256()
+    with pdf.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    cache = cache / "pdfread"
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache / f"{digest.hexdigest()[:16]}.sqlite"
+
+
+def open_index_ro(dest: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"file:{dest}?mode=ro", uri=True)
+
+
+def index_valid(dest: Path) -> bool:
+    if not dest.is_file():
+        return False
+    try:
+        with closing(open_index_ro(dest)) as con:
+            row = con.execute("SELECT value FROM meta WHERE key='version'").fetchone()
+        return row is not None and row[0] == INDEX_SCHEMA_VERSION
+    except sqlite3.Error:
+        return False
+
+
+def build_index(pdf_path: str, dest: Path) -> None:
+    """Index every page's text layer into a fresh FTS5 database at dest.
+
+    Builds into a temp file and renames it into place, so concurrent
+    builders never leave a corrupt index behind.
+    """
+    doc = open_pdf(pdf_path)
+    tmp = dest.with_name(f"{dest.name}.tmp{os.getpid()}")
+    try:
+        with closing(sqlite3.connect(tmp)) as con:
+            try:
+                con.execute(
+                    "CREATE VIRTUAL TABLE pages USING "
+                    "fts5(body, tokenize='unicode61 remove_diacritics 2')"
+                )
+            except sqlite3.OperationalError:
+                die(
+                    "this Python's sqlite3 lacks FTS5; run via uv "
+                    "(uv-managed interpreters include it)"
+                )
+            con.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)")
+            empty = 0
+            with con:
+                for page_no in range(1, doc.page_count + 1):
+                    text: str = doc[page_no - 1].get_text()
+                    if not text.strip():
+                        empty += 1
+                    con.execute(
+                        "INSERT INTO pages(rowid, body) VALUES(?, ?)",
+                        (page_no, text),
+                    )
+                con.executemany(
+                    "INSERT INTO meta VALUES(?, ?)",
+                    [
+                        ("version", INDEX_SCHEMA_VERSION),
+                        ("source", str(Path(pdf_path).resolve())),
+                        ("pages", str(doc.page_count)),
+                        ("empty_pages", str(empty)),
+                    ],
+                )
+        os.replace(tmp, dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def fts_query(raw: str) -> str:
+    """Quote each term against FTS5 syntax; AND them, keep trailing-* prefixes."""
+    terms: list[str] = []
+    for token in raw.split():
+        prefix = "*" if token.endswith("*") else ""
+        token = token.rstrip("*").replace('"', '""')
+        if token:
+            terms.append(f'"{token}"{prefix}')
+    if not terms:
+        die("empty search query")
+    return " AND ".join(terms)
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    pdf = Path(args.file)
+    if not pdf.is_file():
+        die(f"file not found: {args.file}")
+    dest = index_path(pdf)
+    if args.rebuild:
+        dest.unlink(missing_ok=True)
+    if not index_valid(dest):
+        build_index(args.file, dest)
+    query = args.query if args.raw else fts_query(args.query)
+    with closing(open_index_ro(dest)) as con:
+        meta = dict(con.execute("SELECT key, value FROM meta"))
+        note = ""
+        if int(meta["empty_pages"]):
+            note = (
+                f", {meta['empty_pages']} without text layer "
+                "(not searchable -- use `render`)"
+            )
+        print(f"index: {meta['pages']} pages{note}")
+        try:
+            rows = con.execute(
+                "SELECT rowid, -bm25(pages), snippet(pages, 0, '«', "
+                "'»', '…', 10) FROM pages WHERE pages MATCH ? "
+                "ORDER BY bm25(pages) LIMIT ?",
+                (query, args.top),
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            die(f"bad FTS5 query {args.query!r}: {exc}")
+    if not rows:
+        print(
+            f"no pages match {args.query!r}; try fewer terms or prefixes like 'term*'",
+            file=sys.stderr,
+        )
+        return
+    for page_no, score, snippet in rows:
+        print(f"p{page_no}\tscore {score:.1f}\t{' '.join(snippet.split())}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="pdfread.py",
         description="Read PDFs efficiently as an AI agent: extract page-range "
         "text as markdown (figures become [image: pN-imgK] placeholders), "
-        "extract figures by ID as PNGs, render pages, inspect the outline.",
+        "search pages by keyword, extract figures by ID as PNGs, render "
+        "pages, inspect the outline.",
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -255,6 +396,26 @@ def main() -> None:
     )
     p.add_argument("file", help="path to the PDF")
     p.set_defaults(func=cmd_info)
+
+    p = sub.add_parser(
+        "search",
+        help="BM25-ranked pages matching keywords, with snippets",
+    )
+    p.add_argument("file", help="path to the PDF")
+    p.add_argument(
+        "query",
+        help="keywords, ANDed; 'term*' matches prefixes; see --raw",
+    )
+    p.add_argument("--top", type=int, default=10, help="max pages to list (default 10)")
+    p.add_argument(
+        "--raw",
+        action="store_true",
+        help='pass the query as raw FTS5 syntax ("exact phrase", OR, NEAR)',
+    )
+    p.add_argument(
+        "--rebuild", action="store_true", help="force rebuilding the cached index"
+    )
+    p.set_defaults(func=cmd_search)
 
     p = sub.add_parser(
         "text",
