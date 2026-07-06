@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo.svg" width="160" alt="slopclub logo — a club suit melting into a puddle of goo">
+  <img src="./assets/logo.svg" width="160" alt="slopclub logo — an AI spark on a hexagonal badge">
 </p>
 
 # Slopclub
