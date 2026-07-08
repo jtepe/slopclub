@@ -4,11 +4,16 @@ description: Read PDF files without flooding context — extract page-range text
 argument-hint: "Path to the PDF and what you want from it"
 ---
 
-Use the `pdfread.py` tool next to this file to read PDFs. It requires a
-current release of [uv](https://docs.astral.sh/uv/) (0.11+; the shebang runs
-it via `uv run`, and the first invocation downloads dependencies and may take
-a minute). The `search` command needs SQLite with FTS5 — uv-managed Python
-interpreters include it.
+Use the `pdfread.py` tool next to this file to read PDFs. Run it either way:
+
+- With [uv](https://docs.astral.sh/uv/) 0.11+ (preferred): invoke
+  `pdfread.py` directly — the shebang runs it via `uv run`, and the first
+  invocation downloads dependencies and may take a minute.
+- Without uv: `python3 pdfread.py …` works on any Python 3.10+ that has
+  `pymupdf4llm>=0.0.17` installed (`pip install pymupdf4llm`).
+
+The `search` command needs SQLite with FTS5; uv-managed and nearly all
+modern system Pythons include it, and the script errors clearly if not.
 
 Run `pdfread.py --help` for full usage. In short:
 
