@@ -300,8 +300,9 @@ def build_index(pdf_path: str, dest: Path) -> None:
                 )
             except sqlite3.OperationalError:
                 die(
-                    "this Python's sqlite3 lacks FTS5; run via uv "
-                    "(uv-managed interpreters include it)"
+                    "this Python's sqlite3 lacks FTS5 (unusually old or "
+                    "stripped-down SQLite build); run via uv or use a Python "
+                    "whose SQLite includes FTS5 -- most modern builds do"
                 )
             con.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)")
             empty = 0
