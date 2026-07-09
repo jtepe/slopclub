@@ -138,4 +138,4 @@ User invokes with a map (path). A ticket is **optional** — without one, you pi
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing `./wayfinder/` concurrently.
 
-Once the way to the destination is clear and the map's tickets are exhausted, hand off — run `to-tickets` to break the resulting spec or decision into implementation tickets, then work them with `do-issue`.
+Once the way to the destination is clear and the map's tickets are exhausted, hand off — run `to-tickets` to break the resulting spec or decision into implementation tickets, then work them with `implement`.
