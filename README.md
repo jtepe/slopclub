@@ -13,6 +13,6 @@ This strictly personal stuff but feel free to use it. ([License](./LICENSE)).
 ## Content
 
 - [`extension/`](./extension) — pi extensions
-  - [`snoop-mode.ts`](./extension/snoop-mode.ts) — toggle a laid-back, smooth
-    conversational style via `/snoop`.
+  - [`shizzle-mode.ts`](./extension/shizzle-mode.ts) — toggle a laid-back, casual
+    shizzle conversational style via `/shizzle`.
 - [`skills/`](./skills) — agent skills
