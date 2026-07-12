@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo2.png" width="400" alt="slopclub logo — agents in a club">
+  <img src="./assets/logo3.png" alt="slopclub logo — agents in a club">
 </p>
 
 # Slopclub
