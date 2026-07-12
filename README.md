@@ -16,3 +16,15 @@ This strictly personal stuff but feel free to use it. ([License](./LICENSE)).
   - [`shizzle-mode.ts`](./extension/shizzle-mode.ts) — toggle a laid-back, casual
     shizzle conversational style via `/shizzle`.
 - [`skills/`](./skills) — agent skills
+
+## Releasing
+
+Releases are cut by pushing a version tag. Pushing a `v*` tag triggers the
+[`release`](./.github/workflows/release.yml) workflow, which auto-generates
+release notes and attaches a `slopclub-<tag>.zip` bundle (containing
+`extension/`, `skills/`, `README.md`, and `LICENSE`) to a new GitHub Release.
+
+```bash
+git tag -a v0.1.0 -m "First release"
+git push origin v0.1.0
+```
