@@ -17,8 +17,7 @@ This is strictly personal stuff but feel free to use it. ([License](./LICENSE)).
     shizzle conversational style via `/shizzle`.
 - [`skills/`](./skills) — agent skills
   - [`cf-temp-deploy`](./skills/cf-temp-deploy) — deploy a Worker to Cloudflare
-    without an account via [temporary accounts](https://blog.cloudflare.com/temporary-accounts/)
-    (`wrangler deploy --temporary`).
+    without an account via [temporary accounts](https://blog.cloudflare.com/temporary-accounts/).
 
 ## Releasing
 
