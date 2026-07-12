@@ -5,8 +5,7 @@ description: Deploy a Worker (plus bindings like KV, D1, Durable Objects) to Clo
 
 # Deploy To Cloudflare Via A Temporary Account
 
-Cloudflare's [Temporary Accounts for AI agents](https://blog.cloudflare.com/temporary-accounts/)
-let you deploy a Worker to a live `workers.dev` URL with **no account, no login,
+Cloudflare's temporary accounts for AI agents let you deploy a Worker to a live `workers.dev` URL with **no account, no login,
 and no human in the loop**. Wrangler provisions a throwaway account, deploys,
 and prints a **claim URL** the user can open to keep the deployment by
 attaching it to a real Cloudflare account.
@@ -77,9 +76,3 @@ Temporary preview accounts support a limited product set:
 If the project needs anything outside this list (e.g. R2, custom domains,
 Pages), a temporary deploy will not cover it — say so and fall back to a
 normal authenticated deploy.
-
-## References
-
-- Announcement: <https://blog.cloudflare.com/temporary-accounts/>
-- Changelog: <https://developers.cloudflare.com/changelog/post/2026-06-19-temporary-accounts-for-agents/>
-- Docs: <https://developers.cloudflare.com/workers/platform/claim-deployments/>
