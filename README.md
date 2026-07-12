@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo.svg" width="160" alt="slopclub logo — an AI spark on a hexagonal badge">
+  <img src="./assets/logo2.png" width="300" alt="slopclub logo — agents in a club">
 </p>
 
 # Slopclub
