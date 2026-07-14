@@ -1,0 +1,11 @@
+{
+  "name": "pdf-reader",
+  "description": "Read PDF files without flooding context — extract page-range text as markdown, pull out figures by ID, search pages with BM25 ranking, and render pages to images via the bundled pdfread.py CLI.",
+  "version": "1.0.0",
+  "author": {
+    "name": "jtepe"
+  },
+  "repository": "https://github.com/jtepe/slopclub",
+  "license": "Apache-2.0",
+  "keywords": ["pdf", "documents", "skill"]
+}
