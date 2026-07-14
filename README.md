@@ -39,6 +39,28 @@ With Claude Code:
 /plugin install pdf-reader@slopclub
 ```
 
+### Adding the skill to your own marketplace
+
+If you already maintain a plugin marketplace, you can list pdf-reader there
+directly instead of adding this repo as a second marketplace. Add a plugin
+entry with a `git-subdir` source to your `marketplace.json`:
+
+```json
+{
+  "name": "pdf-reader",
+  "source": {
+    "source": "git-subdir",
+    "url": "https://github.com/jtepe/slopclub.git",
+    "path": "skills/pdf-reader"
+  },
+  "description": "Read PDF files without flooding context"
+}
+```
+
+Then install it from your marketplace as usual, e.g.
+`copilot plugin install pdf-reader@your-marketplace`. Optionally pin a
+version with `"ref": "<tag>"` or `"sha": "<commit>"` in the source object.
+
 ## Releasing
 
 Releases are cut by pushing a version tag. Pushing a `v*` tag triggers the
