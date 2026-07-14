@@ -17,6 +17,28 @@ This is strictly personal stuff but feel free to use it. ([License](./LICENSE)).
     shizzle conversational style via `/shizzle`.
 - [`skills/`](./skills) — agent skills
 
+## Installing skills as plugins
+
+The repo doubles as a plugin marketplace (via
+[`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)) for
+harnesses that support the plugin marketplace format, such as GitHub Copilot
+CLI and Claude Code. Currently the [pdf-reader](./skills/pdf-reader) skill is
+exposed as a plugin.
+
+With GitHub Copilot CLI:
+
+```bash
+copilot plugin marketplace add jtepe/slopclub
+copilot plugin install pdf-reader@slopclub
+```
+
+With Claude Code:
+
+```
+/plugin marketplace add jtepe/slopclub
+/plugin install pdf-reader@slopclub
+```
+
 ## Releasing
 
 Releases are cut by pushing a version tag. Pushing a `v*` tag triggers the

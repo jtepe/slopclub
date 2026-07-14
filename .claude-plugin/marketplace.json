@@ -1,0 +1,20 @@
+{
+  "name": "slopclub",
+  "owner": {
+    "name": "jtepe"
+  },
+  "metadata": {
+    "description": "Plugins from the slopclub collection of agent skills",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "pdf-reader",
+      "source": "./skills/pdf-reader",
+      "description": "Read PDF files without flooding context — extract page-range text as markdown, pull out figures by ID, search pages with BM25 ranking, and render pages to images via the bundled pdfread.py CLI.",
+      "keywords": ["pdf", "documents", "skill"],
+      "license": "Apache-2.0",
+      "repository": "https://github.com/jtepe/slopclub"
+    }
+  ]
+}
