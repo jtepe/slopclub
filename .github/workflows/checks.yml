@@ -29,5 +29,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: install dependencies
+        run: npm ci
       - name: tests
         run: node --test extension/marquardt/*.test.ts

@@ -1,0 +1,11 @@
+{
+  "name": "slopclub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test extension/marquardt/*.test.ts"
+  },
+  "dependencies": {
+    "mvdan-sh": "0.10.1"
+  }
+}

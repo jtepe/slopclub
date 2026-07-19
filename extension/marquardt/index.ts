@@ -26,9 +26,12 @@ export default function (pi: ExtensionAPI) {
       return { block: true, reason: verdict.message };
     }
 
+    const segmentLines = verdict.segments?.length
+      ? `\n\nsegments:\n${verdict.segments.map((s) => `  ${s}`).join("\n")}`
+      : "\n\nsegments: (could not parse — failing closed)";
     const accepted = await ctx.ui.confirm(
       "Marquardt: review bash command",
-      `${event.input.command}\n\nverdict path: ${verdict.reason}`,
+      `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}`,
     );
     if (!accepted) {
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
