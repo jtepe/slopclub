@@ -6,6 +6,7 @@
     "test": "node --test extension/marquardt/*.test.ts"
   },
   "dependencies": {
-    "mvdan-sh": "0.10.1"
+    "tree-sitter-bash": "0.25.1",
+    "web-tree-sitter": "0.26.11"
   }
 }
