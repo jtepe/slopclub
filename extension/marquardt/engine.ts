@@ -1,6 +1,5 @@
-import mvdanSh from "mvdan-sh";
-
-const { syntax } = mvdanSh;
+import { createRequire } from "node:module";
+import { Parser, Language, type Node } from "web-tree-sitter";
 
 export type ReviewReason = "list-hit" | "fallthrough" | "judge-critical" | "judge-failure";
 
@@ -20,41 +19,80 @@ export const POLICY_DENIAL_MESSAGE = "tool call denied by policy";
 export const NON_INTERACTIVE_DENIAL_MESSAGE =
   "requires human review; rerun interactively or extend the allow list";
 
-// Statement kinds the engine confidently decomposes. A simple command
-// (CallExpr) becomes a segment; the others only group nested statements,
-// which the walk visits on its own. Anything else (loops, conditionals,
-// arithmetic, declarations, ...) is outside confident coverage and the
-// whole command fails closed.
-const CONTAINER_COMMANDS = new Set(["BinaryCmd", "Subshell", "Block"]);
+// Every node type the engine confidently understands. Tree-sitter parses
+// leniently, so fail-closed means an explicit whitelist: any node outside
+// this set (loops, conditionals, heredocs, assignments, arithmetic, ...)
+// routes the whole command to review.
+const COVERED_NODE_TYPES = new Set([
+  "program",
+  "command",
+  "command_name",
+  "redirected_statement",
+  "list",
+  "pipeline",
+  "subshell",
+  "compound_statement",
+  "command_substitution",
+  "process_substitution",
+  "file_redirect",
+  "file_descriptor",
+  "word",
+  "string",
+  "string_content",
+  "raw_string",
+  "ansi_c_string",
+  "number",
+  "concatenation",
+  "simple_expansion",
+  "expansion",
+  "variable_name",
+  "special_variable_name",
+  "comment",
+]);
+
+const requireFromHere = createRequire(import.meta.url);
+
+let parserPromise: Promise<Parser> | null = null;
+
+function getParser(): Promise<Parser> {
+  parserPromise ??= (async () => {
+    await Parser.init();
+    const language = await Language.load(
+      requireFromHere.resolve("tree-sitter-bash/tree-sitter-bash.wasm"),
+    );
+    const parser = new Parser();
+    parser.setLanguage(language);
+    return parser;
+  })();
+  return parserPromise;
+}
 
 type ParseResult = { ok: true; segments: string[] } | { ok: false };
 
-function parseSegments(command: string): ParseResult {
-  let file: any;
-  try {
-    file = syntax.NewParser().Parse(command, "command");
-  } catch {
-    return { ok: false };
-  }
+async function parseSegments(command: string): Promise<ParseResult> {
+  const tree = (await getParser()).parse(command);
+  if (!tree || tree.rootNode.hasError) return { ok: false };
 
   const segments: string[] = [];
   let covered = true;
-  syntax.Walk(file, (node: any) => {
-    if (node === null || syntax.NodeType(node) !== "Stmt") return true;
-    const cmdType = node.Cmd ? syntax.NodeType(node.Cmd) : null;
-    if (cmdType === "CallExpr") {
-      // The statement span includes redirections and the background
-      // operator; strip trailing separators so segments are clean
-      // targets for anchored list matching.
-      const text = command
-        .slice(node.Pos().Offset(), node.End().Offset())
-        .replace(/[\s;&]+$/, "");
-      segments.push(text);
-    } else if (!cmdType || !CONTAINER_COMMANDS.has(cmdType)) {
+  const visit = (node: Node) => {
+    if (!COVERED_NODE_TYPES.has(node.type)) {
       covered = false;
+      return;
     }
-    return true;
-  });
+    if (node.type === "redirected_statement" && !node.childForFieldName("body")) {
+      covered = false;
+      return;
+    }
+    if (node.type === "command") {
+      const parent = node.parent;
+      segments.push(parent?.type === "redirected_statement" ? parent.text : node.text);
+    }
+    for (const child of node.namedChildren) {
+      if (child) visit(child);
+    }
+  };
+  visit(tree.rootNode);
 
   if (!covered || segments.length === 0) return { ok: false };
   return { ok: true, segments };
@@ -79,8 +117,12 @@ function mostRestrictive(verdicts: Verdict[]): Verdict {
   return verdicts.reduce((worst, v) => (restrictiveness(v) > restrictiveness(worst) ? v : worst));
 }
 
-export function decide(command: string, config: GuardConfig, deps: EngineDeps): Verdict {
-  const parsed = parseSegments(command);
+export async function decide(
+  command: string,
+  config: GuardConfig,
+  deps: EngineDeps,
+): Promise<Verdict> {
+  const parsed = await parseSegments(command);
 
   let verdict: Verdict;
   if (!parsed.ok) {

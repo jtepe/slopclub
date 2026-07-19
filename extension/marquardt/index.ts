@@ -19,7 +19,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     if (!isToolCallEventType("bash", event)) return;
 
-    const verdict = decide(event.input.command, config, { interactive: ctx.hasUI });
+    const verdict = await decide(event.input.command, config, { interactive: ctx.hasUI });
 
     if (verdict.kind === "allow") return;
     if (verdict.kind === "deny") {
