@@ -13,6 +13,9 @@ This is strictly personal stuff but feel free to use it. ([License](./LICENSE)).
 ## Content
 
 - [`extension/`](./extension) — pi extensions
+  - [`marquardt/`](./extension/marquardt) — bash-tool guard: every bash tool
+    call stops at a review prompt before execution; rejected commands return
+    "tool call denied by policy" to the LLM.
   - [`shizzle-mode.ts`](./extension/shizzle-mode.ts) — toggle a laid-back, casual
     shizzle conversational style via `/shizzle`.
 - [`skills/`](./skills) — agent skills
