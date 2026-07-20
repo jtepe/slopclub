@@ -8,7 +8,11 @@ export type Verdict =
   | { kind: "human-review"; reason: ReviewReason; segments?: string[] }
   | { kind: "deny"; message: string };
 
-export interface GuardConfig {}
+export interface GuardConfig {
+  allow: string[];
+  humanReview: string[];
+  deny: string[];
+}
 
 export interface EngineDeps {
   interactive: boolean;
@@ -98,16 +102,48 @@ async function parseSegments(command: string): Promise<ParseResult> {
   return { ok: true, segments };
 }
 
-function classifySegment(_segment: string, _config: GuardConfig): Verdict {
+const compiledPatterns = new Map<string, RegExp | null>();
+
+// List entries match as anchored full-segment regexes; a pattern that fails
+// to compile matches nothing, so a broken entry can only tighten policy.
+function anchoredRegex(pattern: string): RegExp | null {
+  let compiled = compiledPatterns.get(pattern);
+  if (compiled === undefined) {
+    try {
+      compiled = new RegExp(`^(?:${pattern})$`);
+    } catch {
+      compiled = null;
+    }
+    compiledPatterns.set(pattern, compiled);
+  }
+  return compiled;
+}
+
+function matchesAny(segment: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => anchoredRegex(pattern)?.test(segment));
+}
+
+function classifySegment(segment: string, config: GuardConfig): Verdict {
+  if (matchesAny(segment, config.deny)) {
+    return { kind: "deny", message: POLICY_DENIAL_MESSAGE };
+  }
+  if (matchesAny(segment, config.humanReview)) {
+    return { kind: "human-review", reason: "list-hit" };
+  }
+  if (matchesAny(segment, config.allow)) {
+    return { kind: "allow" };
+  }
   return { kind: "human-review", reason: "fallthrough" };
 }
 
+// Among equally restrictive review verdicts, a deliberate list hit outranks a
+// fallthrough so the prompt labels the more informative path.
 function restrictiveness(verdict: Verdict): number {
   switch (verdict.kind) {
     case "deny":
-      return 2;
+      return 3;
     case "human-review":
-      return 1;
+      return verdict.reason === "fallthrough" ? 1 : 2;
     case "allow":
       return 0;
   }
