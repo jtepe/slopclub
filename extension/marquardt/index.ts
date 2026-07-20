@@ -11,14 +11,25 @@
  * non-interactive sessions anything needing review is denied. Non-bash
  * tool calls pass through untouched.
  *
- * Guard lists load from `.pi/marquardt.json` in the project and in the
- * user's home directory: `{ "allow": [], "humanReview": [], "deny": [] }`,
- * each entry an anchored full-segment regex.
+ * Ad-hoc scripts — inline code handed to a known interpreter via a code
+ * flag (`python -c`, `sh -c`, ...), a heredoc, or a stdin pipe — are triaged
+ * by a judge LLM on the same provider the agent already uses. Non-critical
+ * scripts run without prompting; critical scripts stop at review with the
+ * judge's explanation. A failed or malformed judge call escalates to review
+ * annotated "judge unavailable". `python foo.py` (a file argument, no
+ * inline payload) stays a plain command and goes through the lists.
+ *
+ * Guard config loads from `.pi/marquardt.json` in the project and in the
+ * user's home directory: `{ "allow": [], "humanReview": [], "deny": [],
+ * "interpreters": {} }`. List entries are anchored full-segment regexes;
+ * `interpreters` maps interpreter names to their code flags and overrides
+ * the built-in table per name.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { decide, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
+import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
 
 const CHOICE_ACCEPT = "accept (run once)";
@@ -31,7 +42,10 @@ export default function (pi: ExtensionAPI) {
     if (!isToolCallEventType("bash", event)) return;
 
     const config = loadGuardConfig(process.cwd());
-    const verdict = await decide(event.input.command, config, { interactive: ctx.hasUI });
+    const verdict = await decide(event.input.command, config, {
+      interactive: ctx.hasUI,
+      judge: createJudge(ctx),
+    });
 
     if (verdict.kind === "allow") return;
     if (verdict.kind === "deny") {
@@ -42,7 +56,8 @@ export default function (pi: ExtensionAPI) {
     const segmentLines = segments.length
       ? `\n\nsegments:\n${segments.map((s) => `  ${s}`).join("\n")}`
       : "\n\nsegments: (could not parse — failing closed)";
-    const detail = `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}`;
+    const judgeNote = verdict.explanation ? `\n\njudge: ${verdict.explanation}` : "";
+    const detail = `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}${judgeNote}`;
 
     // Without parsed segments there is no anchored pattern to persist, so
     // the prompt degrades to plain accept/reject.

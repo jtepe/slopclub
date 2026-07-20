@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { GuardConfig } from "./engine.ts";
+import { DEFAULT_INTERPRETERS, type GuardConfig, type InterpreterTable } from "./engine.ts";
 
 export type ConfigScope = "project" | "user";
 export type TeachableList = "allow" | "deny";
@@ -12,8 +12,15 @@ export function projectConfigPath(projectDir: string): string {
   return join(projectDir, ".pi", "marquardt.json");
 }
 
-function emptyConfig(): GuardConfig {
-  return { allow: [], humanReview: [], deny: [] };
+interface ConfigFile {
+  allow: string[];
+  humanReview: string[];
+  deny: string[];
+  interpreters: InterpreterTable;
+}
+
+function emptyConfig(): ConfigFile {
+  return { allow: [], humanReview: [], deny: [], interpreters: {} };
 }
 
 function stringList(value: unknown): string[] {
@@ -22,9 +29,18 @@ function stringList(value: unknown): string[] {
     : [];
 }
 
+function interpreterTable(value: unknown): InterpreterTable {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const table: InterpreterTable = {};
+  for (const [name, flags] of Object.entries(value)) {
+    table[name] = stringList(flags);
+  }
+  return table;
+}
+
 // A missing or malformed file contributes empty lists, which is the most
 // restrictive reading: every command falls through to review.
-function readConfigFile(path: string): GuardConfig {
+function readConfigFile(path: string): ConfigFile {
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
@@ -39,6 +55,7 @@ function readConfigFile(path: string): GuardConfig {
       allow: stringList(record.allow),
       humanReview: stringList(record.humanReview),
       deny: stringList(record.deny),
+      interpreters: interpreterTable(record.interpreters),
     };
   } catch {
     return emptyConfig();
@@ -83,5 +100,6 @@ export function loadGuardConfig(projectDir: string): GuardConfig {
     allow: [...user.allow, ...project.allow],
     humanReview: [...user.humanReview, ...project.humanReview],
     deny: [...user.deny, ...project.deny],
+    interpreters: { ...DEFAULT_INTERPRETERS, ...user.interpreters, ...project.interpreters },
   };
 }
