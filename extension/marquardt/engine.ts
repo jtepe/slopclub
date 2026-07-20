@@ -102,6 +102,14 @@ async function parseSegments(command: string): Promise<ParseResult> {
   return { ok: true, segments };
 }
 
+// Review-time list additions persist one pattern per segment. Escaping every
+// regex metacharacter makes the pattern match exactly the reviewed segment,
+// so teaching the guard never widens policy beyond what the human saw.
+export function patternsForSegments(segments: string[]): string[] {
+  const patterns = segments.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return [...new Set(patterns)];
+}
+
 const compiledPatterns = new Map<string, RegExp | null>();
 
 // List entries match as anchored full-segment regexes; a pattern that fails
