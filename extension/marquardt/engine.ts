@@ -5,7 +5,7 @@ import { Parser, Language, type Node } from "web-tree-sitter";
 export type ReviewReason = "list-hit" | "fallthrough" | "judge-critical" | "judge-failure";
 
 export type Verdict =
-  | { kind: "allow" }
+  | { kind: "allow"; via?: "judge" }
   | { kind: "human-review"; reason: ReviewReason; explanation?: string; segments?: string[] }
   | { kind: "deny"; message: string };
 
@@ -383,7 +383,7 @@ async function judgeSegment(segment: Segment, script: string, deps: EngineDeps):
     }
     const answer = parseJudgeAnswer(output);
     if (!answer) continue;
-    if (answer.verdict === "non-critical") return { kind: "allow" };
+    if (answer.verdict === "non-critical") return { kind: "allow", via: "judge" };
     return { kind: "human-review", reason: "judge-critical", explanation: answer.explanation };
   }
   return {
@@ -445,11 +445,17 @@ export async function decide(
   } else if (parsed.protectedWrite) {
     verdict = { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
   } else {
-    verdict = mostRestrictive(
-      await Promise.all(parsed.segments.map((s) => classifySegment(s, config, deps))),
+    const verdicts = await Promise.all(
+      parsed.segments.map((s) => classifySegment(s, config, deps)),
     );
+    verdict = mostRestrictive(verdicts);
     if (verdict.kind === "human-review") {
       verdict = { ...verdict, segments: parsed.segments.map((s) => s.text) };
+    } else if (verdict.kind === "allow") {
+      // An allow that involved the judge is a distinct outcome ("approved
+      // by judge") from a pure list allow, so provenance survives merging.
+      const judged = verdicts.some((v) => v.kind === "allow" && v.via === "judge");
+      verdict = judged ? { kind: "allow", via: "judge" } : { kind: "allow" };
     }
   }
 
