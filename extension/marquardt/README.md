@@ -1,10 +1,10 @@
-# Marquardt
+# marquardt
 
 A bash-tool guard extension for [pi](https://github.com/earendil-works/pi),
 named after Sven Marquardt, the famous Berghain bouncer: it decides which
 commands get in.
 
-Marquardt intercepts every bash tool call the agent makes and produces a
+marquardt intercepts every bash tool call the agent makes and produces a
 verdict *before* anything executes:
 
 - **allow** — the command runs silently.
