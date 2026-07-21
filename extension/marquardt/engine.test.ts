@@ -2,15 +2,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   decide,
+  decideWrite,
   patternsForSegments,
   DEFAULT_INTERPRETERS,
+  DEFAULT_PROTECTED_PATHS,
   JUDGE_UNAVAILABLE_EXPLANATION,
   NON_INTERACTIVE_DENIAL_MESSAGE,
   POLICY_DENIAL_MESSAGE,
+  PROTECTED_PATH_DENIAL_MESSAGE,
   type EngineDeps,
   type GuardConfig,
   type JudgeFn,
   type JudgeInput,
+  type PathEnv,
   type Verdict,
 } from "./engine.ts";
 
@@ -20,9 +24,12 @@ function cfg(overrides: Partial<GuardConfig> = {}): GuardConfig {
     humanReview: [],
     deny: [],
     interpreters: DEFAULT_INTERPRETERS,
+    protectedPaths: DEFAULT_PROTECTED_PATHS,
     ...overrides,
   };
 }
+
+const env: PathEnv = { cwd: "/repo/project", home: "/home/user" };
 
 const unavailableJudge: JudgeFn = async () => {
   throw new Error("judge unavailable in this test");
@@ -44,7 +51,7 @@ function fakeJudge(...outputs: unknown[]): { judge: JudgeFn; calls: JudgeInput[]
 }
 
 function deps(judge: JudgeFn, interactive = true): EngineDeps {
-  return { interactive, judge };
+  return { interactive, judge, env };
 }
 
 const nonCritical = { verdict: "non-critical", explanation: "prints a constant" };
@@ -504,6 +511,98 @@ test("non-interactive session: judge-passed scripts run, everything else denies"
     kind: "deny",
     message: NON_INTERACTIVE_DENIAL_MESSAGE,
   });
+});
+
+const protectedDenial: Verdict = { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
+
+test("write tool targeting a protected path is denied", () => {
+  for (const target of [
+    ".pi/marquardt.json",
+    "/repo/project/.pi/marquardt.json",
+    "/home/user/.pi/marquardt.json",
+    "~/.pi/marquardt.json",
+    "~/.bashrc",
+    "/home/user/.zshrc",
+    "~/.profile",
+    "~/.config/fish/config.fish",
+    ".git/hooks/pre-commit",
+    "/repo/project/.git/hooks/post-merge",
+    "vendor/lib/.git/hooks/pre-push",
+    "~/.local/bin/git",
+    "~/bin/npm",
+    "src/../.git/hooks/pre-commit",
+  ]) {
+    assert.deepEqual(decideWrite(target, config, env), protectedDenial);
+  }
+});
+
+test("write tool targeting an ordinary path passes through", () => {
+  for (const target of [
+    "src/app.ts",
+    "README.md",
+    "/tmp/scratch.txt",
+    ".github/workflows/ci.yml",
+    "~/notes/todo.md",
+    ".gitignore",
+    "bin/tool.sh",
+    ".pi/other.json",
+    "hooks/pre-commit",
+    ".git/config",
+  ]) {
+    assert.deepEqual(decideWrite(target, config, env), { kind: "allow" });
+  }
+});
+
+test("the protected-path set is config-owned and extends the defaults", () => {
+  const custom = cfg({ protectedPaths: [...DEFAULT_PROTECTED_PATHS, "secrets"] });
+  assert.deepEqual(decideWrite("secrets/key.pem", custom, env), protectedDenial);
+  assert.deepEqual(decideWrite("~/.bashrc", custom, env), protectedDenial);
+  assert.deepEqual(decideWrite("src/app.ts", custom, env), { kind: "allow" });
+});
+
+test("bash redirect into a protected path is denied even when allow-listed", async () => {
+  const lists = cfg({ allow: [".*"] });
+  for (const command of [
+    "echo hi > ~/.bashrc",
+    "echo hi >> /home/user/.zshrc",
+    "echo hi > .pi/marquardt.json",
+    "echo hi &> .git/hooks/pre-commit",
+    "echo hi >| ~/.local/bin/shim",
+  ]) {
+    for (const d of [deps(unavailableJudge), deps(unavailableJudge, false)]) {
+      assert.deepEqual(await decide(command, lists, d), protectedDenial);
+    }
+  }
+});
+
+test("protected redirect in a compound denies the whole command", async () => {
+  const lists = cfg({ allow: ["git status", "echo .*"] });
+  assert.deepEqual(
+    await decide("git status && echo x > ~/.bashrc", lists, interactive),
+    protectedDenial,
+  );
+});
+
+test("redirects to ordinary paths keep their usual verdict path", async () => {
+  const lists = cfg({ allow: ["echo hi > /tmp/out", "npm test 2>&1", "sort < ~/.bashrc"] });
+  assert.deepEqual(await decide("echo hi > /tmp/out", lists, interactive), { kind: "allow" });
+  assert.deepEqual(await decide("npm test 2>&1", lists, interactive), { kind: "allow" });
+  assert.deepEqual(await decide("sort < ~/.bashrc", lists, interactive), { kind: "allow" });
+
+  const verdict = await decide("echo hi > /tmp/other", cfg(), interactive);
+  assert.equal(verdict.kind, "human-review");
+});
+
+test("write-redirect destination the engine cannot read fails closed", async () => {
+  const lists = cfg({ allow: [".*"] });
+  for (const command of [
+    "echo hi > $HOME/.bashrc",
+    'echo hi > "$HOME/.bashrc"',
+    "echo hi > $(target)",
+  ]) {
+    const verdict = await decide(command, lists, interactive);
+    assert.deepEqual(verdict, { kind: "human-review", reason: "fallthrough" });
+  }
 });
 
 test("the interpreter table is config-owned", async () => {

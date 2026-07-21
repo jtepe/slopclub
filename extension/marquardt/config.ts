@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { DEFAULT_INTERPRETERS, type GuardConfig, type InterpreterTable } from "./engine.ts";
+import {
+  DEFAULT_INTERPRETERS,
+  DEFAULT_PROTECTED_PATHS,
+  type GuardConfig,
+  type InterpreterTable,
+} from "./engine.ts";
 
 export type ConfigScope = "project" | "user";
 export type TeachableList = "allow" | "deny";
@@ -17,10 +22,11 @@ interface ConfigFile {
   humanReview: string[];
   deny: string[];
   interpreters: InterpreterTable;
+  protectedPaths: string[];
 }
 
 function emptyConfig(): ConfigFile {
-  return { allow: [], humanReview: [], deny: [], interpreters: {} };
+  return { allow: [], humanReview: [], deny: [], interpreters: {}, protectedPaths: [] };
 }
 
 function stringList(value: unknown): string[] {
@@ -56,6 +62,7 @@ function readConfigFile(path: string): ConfigFile {
       humanReview: stringList(record.humanReview),
       deny: stringList(record.deny),
       interpreters: interpreterTable(record.interpreters),
+      protectedPaths: stringList(record.protectedPaths),
     };
   } catch {
     return emptyConfig();
@@ -96,10 +103,17 @@ export function persistPatterns(
 export function loadGuardConfig(projectDir: string): GuardConfig {
   const user = readConfigFile(USER_CONFIG_PATH);
   const project = readConfigFile(projectConfigPath(projectDir));
+  // Config files can only extend the protected set, never shrink it: the
+  // defaults are always present, so no config state disarms the guard.
   return {
     allow: [...user.allow, ...project.allow],
     humanReview: [...user.humanReview, ...project.humanReview],
     deny: [...user.deny, ...project.deny],
     interpreters: { ...DEFAULT_INTERPRETERS, ...user.interpreters, ...project.interpreters },
+    protectedPaths: [
+      ...DEFAULT_PROTECTED_PATHS,
+      ...user.protectedPaths,
+      ...project.protectedPaths,
+    ],
   };
 }
