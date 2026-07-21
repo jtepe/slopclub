@@ -350,7 +350,7 @@ test("repeated segments teach a single pattern", () => {
 
 test("code-flag invocation routes to the judge; non-critical executes with no prompt", async () => {
   const { judge, calls } = fakeJudge(nonCritical);
-  assert.deepEqual(await decide("python -c 'print(1)'", config, deps(judge)), { kind: "allow" });
+  assert.deepEqual(await decide("python -c 'print(1)'", config, deps(judge)), { kind: "allow", via: "judge" });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].script, "print(1)");
   assert.equal(calls[0].commandLine, "python -c 'print(1)'");
@@ -363,7 +363,7 @@ test("code flags of other interpreters route to the judge", async () => {
     ["ruby -e 'puts 1'", "puts 1"],
   ] as const) {
     const { judge, calls } = fakeJudge(nonCritical);
-    assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow" });
+    assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow", via: "judge" });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].script, script);
   }
@@ -385,7 +385,7 @@ test("interpreter with a file argument is a plain command; the judge is never ca
 test("heredoc into an interpreter routes its body to the judge", async () => {
   const { judge, calls } = fakeJudge(nonCritical);
   const command = "python <<EOF\nprint(1)\nEOF";
-  assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow" });
+  assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow", via: "judge" });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].script, "print(1)\n");
 });
@@ -401,7 +401,7 @@ test("stdin pipe into an interpreter routes to the judge", async () => {
   const { judge, calls } = fakeJudge(nonCritical);
   const lists = cfg({ allow: ["echo .*"] });
   const command = "echo 'print(1)' | python";
-  assert.deepEqual(await decide(command, lists, deps(judge)), { kind: "allow" });
+  assert.deepEqual(await decide(command, lists, deps(judge)), { kind: "allow", via: "judge" });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].commandLine, "python");
   assert.equal(calls[0].script, command);
@@ -427,7 +427,7 @@ test("judge-critical stops at review with the judge's explanation", async () => 
 
 test("a failed judge call succeeds on the retry", async () => {
   const { judge, calls } = fakeJudge(new Error("timeout"), nonCritical);
-  assert.deepEqual(await decide("python -c 'print(1)'", config, deps(judge)), { kind: "allow" });
+  assert.deepEqual(await decide("python -c 'print(1)'", config, deps(judge)), { kind: "allow", via: "judge" });
   assert.equal(calls.length, 2);
 });
 
@@ -503,6 +503,7 @@ test("judge verdict aggregates with sibling segments, most restrictive wins", as
 
   assert.deepEqual(await decide("git status && python -c 'print(1)'", lists, deps(judge)), {
     kind: "allow",
+    via: "judge",
   });
 
   const verdict = await decide("terraform apply && python -c 'print(1)'", lists, deps(judge));
@@ -514,6 +515,7 @@ test("non-interactive session: judge-passed scripts still execute", async () => 
   const command = "python -c 'print(1)'";
   assert.deepEqual(await decide(command, config, deps(fakeJudge(nonCritical).judge, false)), {
     kind: "allow",
+    via: "judge",
   });
 });
 
@@ -522,7 +524,7 @@ test("non-interactive session: compound of allow-listed and judge-passed segment
 
   assert.deepEqual(
     await decide("git status && python -c 'print(1)'", lists, deps(fakeJudge(nonCritical).judge, false)),
-    { kind: "allow" },
+    { kind: "allow", via: "judge" },
   );
 
   assert.deepEqual(
@@ -633,6 +635,7 @@ test("the interpreter table is config-owned", async () => {
   const routed = fakeJudge(nonCritical);
   assert.deepEqual(await decide("mytool -x 'boom'", custom, deps(routed.judge)), {
     kind: "allow",
+    via: "judge",
   });
   assert.equal(routed.calls[0]?.script, "boom");
 

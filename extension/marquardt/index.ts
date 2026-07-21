@@ -41,6 +41,7 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { decide, decideWrite, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
 import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
+import { badge, reviewOutcome, type DecisionOutcome } from "./decision-ui.ts";
 
 const CHOICE_ACCEPT = "accept (run once)";
 const CHOICE_REJECT = "reject";
@@ -68,8 +69,18 @@ export default function (pi: ExtensionAPI) {
       env,
     });
 
-    if (verdict.kind === "allow") return;
+    // POC: every surfaced decision leads with an outcome badge — the outcome
+    // label on an outcome-specific background color (see decision-ui.ts).
+    const show = (outcome: DecisionOutcome, type: "info" | "warning" | "error") => {
+      if (ctx.hasUI) ctx.ui.notify(`${badge(outcome)} ${event.input.command}`, type);
+    };
+
+    if (verdict.kind === "allow") {
+      if (verdict.via === "judge") show("allowed-judge", "info");
+      return;
+    }
     if (verdict.kind === "deny") {
+      show("denied-policy", "error");
       return { block: true, reason: verdict.message };
     }
 
@@ -79,26 +90,33 @@ export default function (pi: ExtensionAPI) {
       : "\n\nsegments: (could not parse — failing closed)";
     const judgeNote = verdict.explanation ? `\n\njudge: ${verdict.explanation}` : "";
     const detail = `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}${judgeNote}`;
+    const reviewTitle = `${badge(reviewOutcome(verdict.reason))} marquardt: review bash command`;
 
     // Without parsed segments there is no anchored pattern to persist, so
     // the prompt degrades to plain accept/reject.
     if (segments.length === 0) {
-      const accepted = await ctx.ui.confirm("marquardt: review bash command", detail);
+      const accepted = await ctx.ui.confirm(reviewTitle, detail);
       if (!accepted) {
+        show("rejected-human", "warning");
         return { block: true, reason: POLICY_DENIAL_MESSAGE };
       }
+      show("approved-human", "info");
       return;
     }
 
-    const choice = await ctx.ui.select(`marquardt: review bash command\n\n${detail}`, [
+    const choice = await ctx.ui.select(`${reviewTitle}\n\n${detail}`, [
       CHOICE_ACCEPT,
       CHOICE_REJECT,
       CHOICE_ALLOW,
       CHOICE_DENY,
     ]);
 
-    if (choice === CHOICE_ACCEPT) return;
+    if (choice === CHOICE_ACCEPT) {
+      show("approved-human", "info");
+      return;
+    }
     if (choice !== CHOICE_ALLOW && choice !== CHOICE_DENY) {
+      show("rejected-human", "warning");
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
     }
 
@@ -108,6 +126,7 @@ export default function (pi: ExtensionAPI) {
       "user",
     ]);
     if (scope !== "project" && scope !== "user") {
+      show("rejected-human", "warning");
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
     }
 
@@ -119,7 +138,9 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (list === "deny") {
+      show("rejected-human", "warning");
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
     }
+    show("approved-human", "info");
   });
 }
