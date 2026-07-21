@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { join, resolve } from "node:path/posix";
 import { Parser, Language, type Node } from "web-tree-sitter";
 
 export type ReviewReason = "list-hit" | "fallthrough" | "judge-critical" | "judge-failure";
@@ -15,6 +16,12 @@ export interface GuardConfig {
   humanReview: string[];
   deny: string[];
   interpreters: InterpreterTable;
+  protectedPaths: string[];
+}
+
+export interface PathEnv {
+  cwd: string;
+  home: string;
 }
 
 export interface JudgeInput {
@@ -27,6 +34,7 @@ export type JudgeFn = (input: JudgeInput) => Promise<unknown>;
 export interface EngineDeps {
   interactive: boolean;
   judge: JudgeFn;
+  env: PathEnv;
 }
 
 export const DEFAULT_INTERPRETERS: InterpreterTable = {
@@ -44,7 +52,29 @@ export const DEFAULT_INTERPRETERS: InterpreterTable = {
   php: ["-r"],
 };
 
+export const DEFAULT_PROTECTED_PATHS: string[] = [
+  ".pi/marquardt.json",
+  ".git/hooks",
+  "~/.bashrc",
+  "~/.bash_profile",
+  "~/.bash_login",
+  "~/.bash_logout",
+  "~/.bash_aliases",
+  "~/.profile",
+  "~/.zshrc",
+  "~/.zshenv",
+  "~/.zprofile",
+  "~/.zlogin",
+  "~/.zlogout",
+  "~/.config/fish/config.fish",
+  "~/.config/fish/conf.d",
+  "~/.local/bin",
+  "~/bin",
+];
+
 export const JUDGE_UNAVAILABLE_EXPLANATION = "judge unavailable";
+
+export const PROTECTED_PATH_DENIAL_MESSAGE = "write to protected path denied by policy";
 
 export const POLICY_DENIAL_MESSAGE = "tool call denied by policy";
 
@@ -105,12 +135,50 @@ function getParser(): Promise<Parser> {
   return parserPromise;
 }
 
+function expandTilde(path: string, home: string): string {
+  if (path === "~") return home;
+  return path.startsWith("~/") ? join(home, path.slice(2)) : path;
+}
+
+function pathSegments(path: string): string[] {
+  return path.split("/").filter((part) => part.length > 0);
+}
+
+// A pattern names a file or a directory root; the named path and everything
+// below it are protected. Patterns starting with `~` or `/` anchor at that
+// absolute location, while bare patterns match at any depth, so `.git/hooks`
+// covers the hook directory of every repository the target could reach.
+function isProtectedPath(target: string, config: GuardConfig, env: PathEnv): boolean {
+  const path = pathSegments(resolve(env.cwd, expandTilde(target, env.home)));
+  return config.protectedPaths.some((pattern) => {
+    const anchored = pattern.startsWith("~") || pattern.startsWith("/");
+    const wanted = pathSegments(
+      anchored ? resolve(expandTilde(pattern, env.home)) : pattern,
+    );
+    if (wanted.length === 0 || wanted.length > path.length) return false;
+    const lastStart = anchored ? 0 : path.length - wanted.length;
+    for (let start = 0; start <= lastStart; start++) {
+      if (wanted.every((segment, i) => path[start + i] === segment)) return true;
+    }
+    return false;
+  });
+}
+
+export function decideWrite(target: string, config: GuardConfig, env: PathEnv): Verdict {
+  if (isProtectedPath(target, config, env)) {
+    return { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
+  }
+  return { kind: "allow" };
+}
+
 interface Segment {
   text: string;
   adHoc?: { script: string };
 }
 
-type ParseResult = { ok: true; segments: Segment[] } | { ok: false };
+type ParseResult =
+  | { ok: true; segments: Segment[]; protectedWrite: boolean }
+  | { ok: false };
 
 function literalText(node: Node): string {
   if (node.type === "raw_string" || node.type === "string") return node.text.slice(1, -1);
@@ -165,15 +233,65 @@ function detectAdHocScript(
   return undefined;
 }
 
+const WRITE_REDIRECT_OPERATORS = new Set([">", ">>", ">|", "&>", "&>>", ">&", "<>"]);
+
+// The literal text a redirect destination resolves to, or null when it
+// contains anything the engine cannot evaluate statically (expansions,
+// substitutions). Quotes are stripped so `> "out"` and `> out` agree.
+function literalPathText(node: Node): string | null {
+  switch (node.type) {
+    case "word":
+    case "number":
+      return node.text;
+    case "raw_string":
+      return node.text.slice(1, -1);
+    case "ansi_c_string":
+      return node.text.slice(2, -1);
+    case "string":
+      if (node.namedChildren.some((child) => child !== null && child.type !== "string_content")) {
+        return null;
+      }
+      return node.text.slice(1, -1);
+    case "concatenation": {
+      let text = "";
+      for (const child of node.namedChildren) {
+        const part = child === null ? null : literalPathText(child);
+        if (part === null) return null;
+        text += part;
+      }
+      return text;
+    }
+    default:
+      return null;
+  }
+}
+
+type RedirectScan = "none" | "protected" | "opaque";
+
+// A write-redirect with a destination the engine cannot read is opaque; the
+// caller fails the whole command closed rather than risk a protected target
+// hiding behind a variable. Dup targets like `2>&1` resolve to a bare
+// numeral, which no protected pattern can match.
+function classifyFileRedirect(node: Node, config: GuardConfig, env: PathEnv): RedirectScan {
+  const operator = node.children.find((token) => token !== null && !token.isNamed);
+  if (!operator || !WRITE_REDIRECT_OPERATORS.has(operator.type)) return "none";
+  const destination = node.childForFieldName("destination");
+  const literal = destination ? literalPathText(destination) : null;
+  if (literal === null) return "opaque";
+  return isProtectedPath(literal, config, env) ? "protected" : "none";
+}
+
 async function parseSegments(
   command: string,
-  interpreters: InterpreterTable,
+  config: GuardConfig,
+  env: PathEnv,
 ): Promise<ParseResult> {
   const tree = (await getParser()).parse(command);
   if (!tree || tree.rootNode.hasError) return { ok: false };
 
   const segments: Segment[] = [];
   let covered = true;
+  let protectedWrite = false;
   const visit = (node: Node) => {
     if (!COVERED_NODE_TYPES.has(node.type)) {
       covered = false;
@@ -183,12 +301,20 @@ async function parseSegments(
       covered = false;
       return;
     }
+    if (node.type === "file_redirect") {
+      const redirect = classifyFileRedirect(node, config, env);
+      if (redirect === "opaque") {
+        covered = false;
+        return;
+      }
+      if (redirect === "protected") protectedWrite = true;
+    }
     if (node.type === "command") {
       const parent = node.parent;
       const container = parent?.type === "redirected_statement" ? parent : node;
       segments.push({
         text: container.text,
-        adHoc: detectAdHocScript(node, container, interpreters),
+        adHoc: detectAdHocScript(node, container, config.interpreters),
       });
     }
     for (const child of node.namedChildren) {
@@ -198,7 +324,7 @@ async function parseSegments(
   visit(tree.rootNode);
 
   if (!covered || segments.length === 0) return { ok: false };
-  return { ok: true, segments };
+  return { ok: true, segments, protectedWrite };
 }
 
 // Review-time list additions persist one pattern per segment. Escaping every
@@ -311,11 +437,13 @@ export async function decide(
   config: GuardConfig,
   deps: EngineDeps,
 ): Promise<Verdict> {
-  const parsed = await parseSegments(command, config.interpreters);
+  const parsed = await parseSegments(command, config, deps.env);
 
   let verdict: Verdict;
   if (!parsed.ok) {
     verdict = { kind: "human-review", reason: "fallthrough" };
+  } else if (parsed.protectedWrite) {
+    verdict = { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
   } else {
     verdict = mostRestrictive(
       await Promise.all(parsed.segments.map((s) => classifySegment(s, config, deps))),

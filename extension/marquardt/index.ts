@@ -19,16 +19,26 @@
  * annotated "judge unavailable". `python foo.py` (a file argument, no
  * inline payload) stays a plain command and goes through the lists.
  *
+ * Writes targeting the protected-path set are refused from every tool, so
+ * the agent cannot disarm the guard that constrains it: the guard's own
+ * config files, shell rc/profile files, git hook directories, and
+ * user-writable PATH-shim directories. File-write tools (`write`, `edit`)
+ * are checked against the set, and bash redirects into a protected path are
+ * denied; a redirect whose destination the engine cannot read statically
+ * fails closed to review. Writes anywhere else pass through untouched.
+ *
  * Guard config loads from `.pi/marquardt.json` in the project and in the
  * user's home directory: `{ "allow": [], "humanReview": [], "deny": [],
- * "interpreters": {} }`. List entries are anchored full-segment regexes;
- * `interpreters` maps interpreter names to their code flags and overrides
- * the built-in table per name.
+ * "interpreters": {}, "protectedPaths": [] }`. List entries are anchored
+ * full-segment regexes; `interpreters` maps interpreter names to their code
+ * flags and overrides the built-in table per name; `protectedPaths` extends
+ * the built-in protected set and can never shrink it.
  */
 
+import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { decide, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
+import { decide, decideWrite, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
 import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
 
@@ -39,12 +49,23 @@ const CHOICE_DENY = "add to deny list (always refuse)";
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
+    const env = { cwd: ctx.cwd, home: homedir() };
+
+    if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
+      const verdict = decideWrite(event.input.path, loadGuardConfig(env.cwd), env);
+      if (verdict.kind === "deny") {
+        return { block: true, reason: verdict.message };
+      }
+      return;
+    }
+
     if (!isToolCallEventType("bash", event)) return;
 
-    const config = loadGuardConfig(process.cwd());
+    const config = loadGuardConfig(env.cwd);
     const verdict = await decide(event.input.command, config, {
       interactive: ctx.hasUI,
       judge: createJudge(ctx),
+      env,
     });
 
     if (verdict.kind === "allow") return;
@@ -91,7 +112,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      persistPatterns(scope as ConfigScope, process.cwd(), list, patternsForSegments(segments));
+      persistPatterns(scope as ConfigScope, env.cwd, list, patternsForSegments(segments));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { block: true, reason: `guard config update failed: ${message}` };
