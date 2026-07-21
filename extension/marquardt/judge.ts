@@ -36,7 +36,7 @@ ${input.script}
 -----END UNTRUSTED SCRIPT-----`;
 }
 
-const SMALL_MODEL_HINTS = ["haiku", "mini", "flash", "lite", "small", "nano"];
+const SMALL_MODEL_HINTS = ["haiku", "mini", "flash", "lite", "small", "nano", "luna"];
 
 // Same provider as the main agent (never a new endpoint), preferring a
 // small fast model from that provider's catalog.
