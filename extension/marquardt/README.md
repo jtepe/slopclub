@@ -144,10 +144,3 @@ Notably, writing a script or Makefile with ordinary file tools and then
 triggering it via an allow-listed command (the *write-then-execute bypass*)
 is accepted residual risk outside the protected-path set — full containment
 is a sandbox's job.
-
-## Further reading
-
-- [`docs/glossary.md`](./docs/glossary.md) — terminology.
-- [`docs/adr/`](./docs/adr) — architecture decision records covering the
-  design choices above (fail-closed matching, judge escalation, protected
-  paths, list precedence, and more).
