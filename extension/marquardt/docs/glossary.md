@@ -1,6 +1,6 @@
-# Marquardt — Glossary
+# marquardt — Glossary
 
-Marquardt is Pi's bash-tool guard extension, named after Sven Marquardt, the famous
+marquardt is Pi's bash-tool guard extension, named after Sven Marquardt, the famous
 Berghain bouncer: it decides which commands get in.
 
 Sharpened during the 2026-07-19 design grilling. Supersedes the glossary in the

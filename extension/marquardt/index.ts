@@ -1,5 +1,5 @@
 /**
- * Marquardt — bash-tool guard.
+ * marquardt — bash-tool guard.
  *
  * Intercepts every bash tool call and produces a verdict before anything
  * executes. Allow-listed commands run silently, deny-listed commands are
@@ -83,14 +83,14 @@ export default function (pi: ExtensionAPI) {
     // Without parsed segments there is no anchored pattern to persist, so
     // the prompt degrades to plain accept/reject.
     if (segments.length === 0) {
-      const accepted = await ctx.ui.confirm("Marquardt: review bash command", detail);
+      const accepted = await ctx.ui.confirm("marquardt: review bash command", detail);
       if (!accepted) {
         return { block: true, reason: POLICY_DENIAL_MESSAGE };
       }
       return;
     }
 
-    const choice = await ctx.ui.select(`Marquardt: review bash command\n\n${detail}`, [
+    const choice = await ctx.ui.select(`marquardt: review bash command\n\n${detail}`, [
       CHOICE_ACCEPT,
       CHOICE_REJECT,
       CHOICE_ALLOW,
