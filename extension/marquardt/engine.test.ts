@@ -132,14 +132,27 @@ test("empty and whitespace-only input fails closed", async () => {
   }
 });
 
-test("non-interactive session: would-be review resolves to deny", async () => {
-  for (const command of ["git status", 'echo "unclosed', "ls && rm -rf /"]) {
-    const verdict = await decide(command, config, headless);
-    assert.deepEqual(verdict, {
-      kind: "deny",
-      message: NON_INTERACTIVE_DENIAL_MESSAGE,
-    });
+test("non-interactive session: every review-producing path resolves to deny", async () => {
+  const headlessDenial: Verdict = { kind: "deny", message: NON_INTERACTIVE_DENIAL_MESSAGE };
+
+  for (const fallthrough of ["git status", 'echo "unclosed', "ls && rm -rf /"]) {
+    assert.deepEqual(await decide(fallthrough, config, headless), headlessDenial);
   }
+
+  const reviewListed = cfg({ humanReview: ["git push( .*)?"] });
+  assert.deepEqual(await decide("git push origin main", reviewListed, headless), headlessDenial);
+
+  const script = "python -c 'print(1)'";
+  assert.deepEqual(
+    await decide(script, config, deps(fakeJudge(critical).judge, false)),
+    headlessDenial,
+  );
+
+  assert.deepEqual(await decide(script, config, deps(unavailableJudge, false)), headlessDenial);
+  assert.deepEqual(
+    await decide(script, config, deps(fakeJudge({ verdict: "safe", explanation: "x" }).judge, false)),
+    headlessDenial,
+  );
 });
 
 test("allow-listed command resolves to allow with no review", async () => {
@@ -497,20 +510,29 @@ test("judge verdict aggregates with sibling segments, most restrictive wins", as
   assert.equal(verdict.kind === "human-review" && verdict.reason, "fallthrough");
 });
 
-test("non-interactive session: judge-passed scripts run, everything else denies", async () => {
+test("non-interactive session: judge-passed scripts still execute", async () => {
   const command = "python -c 'print(1)'";
-
   assert.deepEqual(await decide(command, config, deps(fakeJudge(nonCritical).judge, false)), {
     kind: "allow",
   });
-  assert.deepEqual(await decide(command, config, deps(fakeJudge(critical).judge, false)), {
-    kind: "deny",
-    message: NON_INTERACTIVE_DENIAL_MESSAGE,
-  });
-  assert.deepEqual(await decide(command, config, deps(unavailableJudge, false)), {
-    kind: "deny",
-    message: NON_INTERACTIVE_DENIAL_MESSAGE,
-  });
+});
+
+test("non-interactive session: compound of allow-listed and judge-passed segments executes", async () => {
+  const lists = cfg({ allow: ["git status"] });
+
+  assert.deepEqual(
+    await decide("git status && python -c 'print(1)'", lists, deps(fakeJudge(nonCritical).judge, false)),
+    { kind: "allow" },
+  );
+
+  assert.deepEqual(
+    await decide(
+      "git status && terraform apply && python -c 'print(1)'",
+      lists,
+      deps(fakeJudge(nonCritical).judge, false),
+    ),
+    { kind: "deny", message: NON_INTERACTIVE_DENIAL_MESSAGE },
+  );
 });
 
 const protectedDenial: Verdict = { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
