@@ -77,29 +77,6 @@ Persisted patterns are exact, regex-escaped matches of the reviewed
 segments — teaching the guard never widens policy beyond what you saw. You
 can hand-edit the config afterwards to generalize a pattern.
 
-### Decision-outcome colors (POC)
-
-Every decision the guard surfaces leads with a badge — the outcome label on
-a solid, outcome-specific background color — in the review prompt title and
-in notifications, so outcomes are distinguishable at a glance:
-
-| Badge | Color | Hex | Shown when |
-| --- | --- | --- | --- |
-| `ALLOWED · LIST` | green | `#15803d` | allow-list hit (currently silent; used by the demo) |
-| `ALLOWED · JUDGE` | teal | `#0d9488` | judge ruled non-critical, script ran |
-| `APPROVED · HUMAN` | blue | `#2563eb` | you accepted at review (or taught allow) |
-| `NEEDS REVIEW` | yellow | `#a16207` | list hit / fallthrough waiting on you |
-| `JUDGE · CRITICAL` | orange | `#c2410c` | judge flagged the script, waiting on you |
-| `JUDGE UNAVAILABLE` | gray | `#52525b` | judge failed, waiting on you |
-| `DENIED · POLICY` | red | `#dc2626` | deny-list or protected-path refusal |
-| `REJECTED · HUMAN` | purple | `#7c3aed` | you rejected at review (or taught deny) |
-
-Approvals sit on the cool side (green/teal/blue), pending states on the warm
-side (yellow/orange, gray for degraded), refusals at the extremes (red for
-policy, purple for a human refusal). All backgrounds are dark enough that
-white text reads on light and dark terminal themes. Preview the palette
-with `node extension/marquardt/decision-ui.demo.ts`.
-
 ## Configuration
 
 Guard config is read from two files, both optional:
