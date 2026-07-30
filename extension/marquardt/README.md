@@ -55,7 +55,9 @@ provider's catalog — never a new endpoint):
 - **critical** scripts stop at human review, annotated with the judge's
   explanation;
 - a failed or malformed judge call escalates to review annotated
-  `judge unavailable`.
+  `judge unavailable: <provider/model and error>`. The guard first tries a
+  small matching model, then retries the active model on the same provider if
+  that catalog entry is stale, restricted, or unavailable.
 
 `python foo.py` (a file argument, no inline payload) is *not* an ad-hoc
 script; it stays a plain command and goes through the lists.
