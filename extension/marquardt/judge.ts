@@ -49,9 +49,23 @@ export function pickJudgeModel(
     (model) => model.provider === current.provider && model.input.includes("text"),
   );
   const small = siblings.find((model) =>
-    SMALL_MODEL_HINTS.some((hint) => model.id.toLowerCase().includes(hint)),
+    SMALL_MODEL_HINTS.some((hint) => `${model.id} ${model.name}`.toLowerCase().includes(hint)),
   );
   return small ?? current;
+}
+
+// Provider catalogs can contain stale, restricted, or retired small models.
+// Keep the cost-saving preference, but always retain the active model as a
+// known-working fallback on the identical provider configuration.
+export function pickJudgeModels(
+  current: Model<Api> | undefined,
+  available: Model<Api>[],
+): Model<Api>[] {
+  if (!current) return [];
+  const preferred = pickJudgeModel(current, available);
+  return preferred && (preferred.id !== current.id || preferred.provider !== current.provider)
+    ? [preferred, current]
+    : [current];
 }
 
 function extractJson(text: string): unknown {
@@ -64,43 +78,54 @@ function extractJson(text: string): unknown {
   }
 }
 
-// Judge transport: one provider call per invocation; retry policy lives in
-// the engine, schema validation happens at the engine's schema gate.
+// Judge transport tries the preferred small model, then the active model as
+// a same-provider fallback; retry policy otherwise lives in the engine, and
+// schema validation happens at the engine's schema gate.
 export function createJudge(ctx: ExtensionContext): JudgeFn {
   return async (input) => {
-    const model = pickJudgeModel(ctx.model, ctx.modelRegistry.getAvailable());
-    if (!model) throw new Error("no model configured");
+    const models = pickJudgeModels(ctx.model, ctx.modelRegistry.getAvailable());
+    if (models.length === 0) throw new Error("no model configured");
 
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-    if (!auth.ok) throw new Error(auth.error);
+    const failures: string[] = [];
+    for (const model of models) {
+      const label = `${model.provider}/${model.id}`;
+      try {
+        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+        if (!auth.ok) throw new Error(`authentication failed: ${auth.error}`);
 
-    const response = await completeSimple(
-      model,
-      {
-        systemPrompt: JUDGE_SYSTEM_PROMPT,
-        messages: [
-          { role: "user", content: judgePrompt(input, ctx.cwd), timestamp: Date.now() },
-        ],
-      },
-      {
-        apiKey: auth.apiKey,
-        headers: auth.headers,
-        env: auth.env,
-        maxTokens: JUDGE_MAX_TOKENS,
-        timeoutMs: JUDGE_TIMEOUT_MS,
-        maxRetries: 0,
-      },
-    );
-    if (response.stopReason === "error" || response.stopReason === "aborted") {
-      throw new Error(response.errorMessage ?? "judge call failed");
+        const response = await completeSimple(
+          model,
+          {
+            systemPrompt: JUDGE_SYSTEM_PROMPT,
+            messages: [
+              { role: "user", content: judgePrompt(input, ctx.cwd), timestamp: Date.now() },
+            ],
+          },
+          {
+            apiKey: auth.apiKey,
+            headers: auth.headers,
+            env: auth.env,
+            maxTokens: JUDGE_MAX_TOKENS,
+            timeoutMs: JUDGE_TIMEOUT_MS,
+            maxRetries: 0,
+          },
+        );
+        if (response.stopReason === "error" || response.stopReason === "aborted") {
+          throw new Error(response.errorMessage ?? `request ${response.stopReason}`);
+        }
+
+        const text = response.content
+          .filter((part): part is Extract<(typeof response.content)[number], { type: "text" }> =>
+            part.type === "text",
+          )
+          .map((part) => part.text)
+          .join("");
+        return extractJson(text);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(`${label}: ${message}`);
+      }
     }
-
-    const text = response.content
-      .filter((part): part is Extract<(typeof response.content)[number], { type: "text" }> =>
-        part.type === "text",
-      )
-      .map((part) => part.text)
-      .join("");
-    return extractJson(text);
+    throw new Error(failures.join("; "));
   };
 }

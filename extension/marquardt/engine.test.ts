@@ -431,13 +431,13 @@ test("a failed judge call succeeds on the retry", async () => {
   assert.equal(calls.length, 2);
 });
 
-test("judge failure after one retry escalates to review annotated judge unavailable", async () => {
+test("judge failure after one retry escalates to review with the judge error", async () => {
   const { judge, calls } = fakeJudge(new Error("timeout"));
   const verdict = await decide("python -c 'print(1)'", config, deps(judge));
   assert.deepEqual(verdict, {
     kind: "human-review",
     reason: "judge-failure",
-    explanation: JUDGE_UNAVAILABLE_EXPLANATION,
+    explanation: `${JUDGE_UNAVAILABLE_EXPLANATION}: timeout`,
     segments: ["python -c 'print(1)'"],
   });
   assert.equal(calls.length, 2);

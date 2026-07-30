@@ -74,6 +74,15 @@ export const DEFAULT_PROTECTED_PATHS: string[] = [
 
 export const JUDGE_UNAVAILABLE_EXPLANATION = "judge unavailable";
 
+function judgeFailureExplanation(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  // Errors end up in the review UI. Keep them legible and bounded while
+  // preserving the provider/model and transport detail needed to diagnose a
+  // failed judge request.
+  const detail = message.replace(/\s+/g, " ").trim().slice(0, 500);
+  return detail ? `${JUDGE_UNAVAILABLE_EXPLANATION}: ${detail}` : JUDGE_UNAVAILABLE_EXPLANATION;
+}
+
 export const PROTECTED_PATH_DENIAL_MESSAGE = "write to protected path denied by policy";
 
 export const POLICY_DENIAL_MESSAGE = "tool call denied by policy";
@@ -374,22 +383,27 @@ function parseJudgeAnswer(output: unknown): JudgeAnswer | undefined {
 
 async function judgeSegment(segment: Segment, script: string, deps: EngineDeps): Promise<Verdict> {
   const input: JudgeInput = { script, commandLine: segment.text };
+  const failures: string[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
     let output: unknown;
     try {
       output = await deps.judge(input);
-    } catch {
+    } catch (error) {
+      failures.push(judgeFailureExplanation(error));
       continue;
     }
     const answer = parseJudgeAnswer(output);
-    if (!answer) continue;
+    if (!answer) {
+      failures.push(`${JUDGE_UNAVAILABLE_EXPLANATION}: invalid judge response`);
+      continue;
+    }
     if (answer.verdict === "non-critical") return { kind: "allow", via: "judge" };
     return { kind: "human-review", reason: "judge-critical", explanation: answer.explanation };
   }
   return {
     kind: "human-review",
     reason: "judge-failure",
-    explanation: JUDGE_UNAVAILABLE_EXPLANATION,
+    explanation: [...new Set(failures)].join("; ") || JUDGE_UNAVAILABLE_EXPLANATION,
   };
 }
 
