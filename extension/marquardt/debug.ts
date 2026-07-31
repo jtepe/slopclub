@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { loadGuardConfig } from "./config.ts";
-import { debugDecision, type JudgeFn } from "./engine.ts";
+import { decide, type JudgeFn } from "./engine.ts";
 
 type JudgeMode = "critical" | "non-critical" | "unavailable";
 
@@ -75,7 +75,7 @@ function simulatedJudge(mode: JudgeMode): JudgeFn {
 
 export async function inspect(command: string, options: Omit<Options, "command">) {
   const config = loadGuardConfig(options.cwd);
-  const decision = await debugDecision(command, config, {
+  const decision = await decide(command, config, {
     interactive: options.interactive,
     judge: simulatedJudge(options.judge),
     env: { cwd: options.cwd, home: homedir() },

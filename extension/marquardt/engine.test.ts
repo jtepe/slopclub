@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  decide,
-  debugDecision,
+  decide as decisionLog,
+  giveVerdict,
   decideWrite,
   patternsForSegments,
   DEFAULT_INTERPRETERS,
@@ -18,6 +18,8 @@ import {
   type PathEnv,
   type Verdict,
 } from "./engine.ts";
+
+const decide = giveVerdict;
 
 function cfg(overrides: Partial<GuardConfig> = {}): GuardConfig {
   return {
@@ -69,7 +71,7 @@ function reviewSegments(verdict: Verdict): string[] {
 }
 
 test("debug trace exposes parsed segments and their decision paths", async () => {
-  const trace = await debugDecision(
+  const trace = await decisionLog(
     "git status && python -c 'print(1)'",
     cfg({ allow: ["git status"] }),
     deps(fakeJudge(nonCritical).judge),
