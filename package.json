@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "debug:marquardt": "node extension/marquardt/debug.ts",
     "test": "node --test extension/marquardt/*.test.ts"
   },
   "dependencies": {

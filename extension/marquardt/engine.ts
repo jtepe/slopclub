@@ -37,6 +37,19 @@ export interface EngineDeps {
   env: PathEnv;
 }
 
+// A structured account of a decision for the standalone debug tool. This is
+// deliberately data-only: it exposes the engine's path without changing it.
+export interface DecisionDebug {
+  parsed: boolean;
+  protectedWrite: boolean;
+  segments: Array<{
+    text: string;
+    adHocScript: boolean;
+    verdict?: Verdict;
+  }>;
+  verdict: Verdict;
+}
+
 export const DEFAULT_INTERPRETERS: InterpreterTable = {
   sh: ["-c"],
   bash: ["-c"],
@@ -480,35 +493,55 @@ function mostRestrictive(verdicts: Verdict[]): Verdict {
   return verdicts.reduce((worst, v) => (restrictiveness(v) > restrictiveness(worst) ? v : worst));
 }
 
-export async function decide(
+export async function debugDecision(
   command: string,
   config: GuardConfig,
   deps: EngineDeps,
-): Promise<Verdict> {
+): Promise<DecisionDebug> {
   const parsed = await parseSegments(command, config, deps.env);
-
   let verdict: Verdict;
+  let segments: DecisionDebug["segments"] = [];
+  let protectedWrite = false;
+
   if (!parsed.ok) {
     verdict = { kind: "human-review", reason: "fallthrough" };
   } else if (parsed.protectedWrite) {
+    protectedWrite = true;
+    segments = parsed.segments.map((segment) => ({
+      text: segment.text,
+      adHocScript: Boolean(segment.adHoc),
+    }));
     verdict = { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
   } else {
     const verdicts = await Promise.all(
-      parsed.segments.map((s) => classifySegment(s, config, deps)),
+      parsed.segments.map((segment) => classifySegment(segment, config, deps)),
     );
+    segments = parsed.segments.map((segment, index) => ({
+      text: segment.text,
+      adHocScript: Boolean(segment.adHoc),
+      verdict: verdicts[index],
+    }));
     verdict = mostRestrictive(verdicts);
     if (verdict.kind === "human-review") {
-      verdict = { ...verdict, segments: parsed.segments.map((s) => s.text) };
+      verdict = { ...verdict, segments: parsed.segments.map((segment) => segment.text) };
     } else if (verdict.kind === "allow") {
       // An allow that involved the judge is a distinct outcome ("approved
       // by judge") from a pure list allow, so provenance survives merging.
-      const judged = verdicts.some((v) => v.kind === "allow" && v.via === "judge");
+      const judged = verdicts.some((candidate) => candidate.kind === "allow" && candidate.via === "judge");
       verdict = judged ? { kind: "allow", via: "judge" } : { kind: "allow" };
     }
   }
 
   if (verdict.kind === "human-review" && !deps.interactive) {
-    return { kind: "deny", message: NON_INTERACTIVE_DENIAL_MESSAGE };
+    verdict = { kind: "deny", message: NON_INTERACTIVE_DENIAL_MESSAGE };
   }
-  return verdict;
+  return { parsed: parsed.ok, protectedWrite, segments, verdict };
+}
+
+export async function decide(
+  command: string,
+  config: GuardConfig,
+  deps: EngineDeps,
+): Promise<Verdict> {
+  return (await debugDecision(command, config, deps)).verdict;
 }
