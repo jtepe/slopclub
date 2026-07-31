@@ -141,6 +141,25 @@ git hook directories (`.git/hooks`), shell rc/profile files (`~/.bashrc`,
 `~/.zshrc`, `~/.profile`, fish config, and friends), and user-writable
 PATH-shim directories (`~/.local/bin`, `~/bin`).
 
+## Debugging execution flows
+
+Use the standalone debugger to inspect the exact parser, list, judge, and
+final-verdict path without starting pi:
+
+```bash
+npm run debug:marquardt -- "git status && python -c 'print(1)'"
+npm run debug:marquardt -- --judge critical "python -c 'rm -rf /tmp/demo'"
+npm run debug:marquardt -- --headless "terraform apply"
+```
+
+It prints a JSON trace containing the loaded config, parsed segments,
+per-segment verdicts, and final verdict. By default it simulates an
+unavailable judge, so it never sends a model request; use `--judge critical`
+or `--judge non-critical` to exercise those branches. With no command it
+opens a REPL, which can be launched in Helix with `:sh npm run
+debug:marquardt`; enter shell commands there, then use `:quit` to exit. Pass
+`--cwd <dir>` to load another project's config.
+
 ## Limitations
 
 The guard vets what the bash tool is asked to run; it is not a sandbox.
