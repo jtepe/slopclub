@@ -38,7 +38,7 @@
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { decide, decideWrite, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
+import { giveVerdict, decideWrite, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
 import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
 import { badge, reviewOutcome, type DecisionOutcome } from "./decision-ui.ts";
@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     if (!isToolCallEventType("bash", event)) return;
 
     const config = loadGuardConfig(env.cwd);
-    const verdict = await decide(event.input.command, config, {
+    const verdict = await giveVerdict(event.input.command, config, {
       interactive: ctx.hasUI,
       judge: createJudge(ctx),
       env,

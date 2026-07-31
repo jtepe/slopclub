@@ -37,9 +37,9 @@ export interface EngineDeps {
   env: PathEnv;
 }
 
-// A structured account of a decision for the standalone debug tool. This is
-// deliberately data-only: it exposes the engine's path without changing it.
-export interface DecisionDebug {
+// A structured account of an attempted command execution, including every
+// input and intermediate verdict that contributed to the final verdict.
+export interface DecisionLog {
   parsed: boolean;
   protectedWrite: boolean;
   segments: Array<{
@@ -493,14 +493,14 @@ function mostRestrictive(verdicts: Verdict[]): Verdict {
   return verdicts.reduce((worst, v) => (restrictiveness(v) > restrictiveness(worst) ? v : worst));
 }
 
-export async function debugDecision(
+export async function decide(
   command: string,
   config: GuardConfig,
   deps: EngineDeps,
-): Promise<DecisionDebug> {
+): Promise<DecisionLog> {
   const parsed = await parseSegments(command, config, deps.env);
   let verdict: Verdict;
-  let segments: DecisionDebug["segments"] = [];
+  let segments: DecisionLog["segments"] = [];
   let protectedWrite = false;
 
   if (!parsed.ok) {
@@ -538,10 +538,10 @@ export async function debugDecision(
   return { parsed: parsed.ok, protectedWrite, segments, verdict };
 }
 
-export async function decide(
+export async function giveVerdict(
   command: string,
   config: GuardConfig,
   deps: EngineDeps,
 ): Promise<Verdict> {
-  return (await debugDecision(command, config, deps)).verdict;
+  return (await decide(command, config, deps)).verdict;
 }
