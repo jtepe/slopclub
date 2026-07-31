@@ -46,10 +46,12 @@ statically (variables, substitutions) goes to human review as a whole.
 ### Ad-hoc scripts and the judge
 
 An **ad-hoc script** is inline code handed to a known interpreter — via a
-code flag (`python -c '...'`, `sh -c '...'`, `node -e '...'`), a heredoc, or
-a stdin pipe. These are triaged by a **judge LLM** running on the same
-provider the agent already uses (preferring a small, fast model from that
-provider's catalog — never a new endpoint):
+code flag (`python -c '...'`, including attached forms such as `node -p1+1`),
+a heredoc, a here-string, or a stdin pipe. Direct interpreter wrappers such
+as `env python -c '...'` and `command python -c '...'` are also recognized.
+These are triaged by a **judge LLM** running on the same provider the agent
+already uses (preferring a small, fast model from that provider's catalog —
+never a new endpoint):
 
 - **non-critical** scripts run without prompting;
 - **critical** scripts stop at human review, annotated with the judge's

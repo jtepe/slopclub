@@ -114,9 +114,11 @@ const COVERED_NODE_TYPES = new Set([
   "simple_expansion",
   "expansion",
   "variable_name",
+  "variable_assignment",
   "special_variable_name",
   "comment",
   "heredoc_redirect",
+  "herestring_redirect",
   "heredoc_start",
   "heredoc_body",
   "simple_heredoc_body",
@@ -197,22 +199,54 @@ function literalText(node: Node): string {
 // a script file stays a plain command; the heredoc and pipe branches therefore
 // require every argument to be an option, so the interpreter must be reading
 // the payload itself.
+// Shell builtins and env commonly prefix an interpreter invocation. They do
+// not turn its code into a file, so recognize the direct wrapper form too;
+// otherwise a broad allow rule for (for example) `env .*` could bypass the
+// judge entirely.
+const INTERPRETER_WRAPPERS = new Set(["env", "command", "exec", "nohup", "nice", "time"]);
+const REDIRECT_NODE_TYPES = new Set(["file_redirect", "heredoc_redirect", "herestring_redirect"]);
+
 function detectAdHocScript(
   command: Node,
   container: Node,
   interpreters: InterpreterTable,
 ): Segment["adHoc"] {
   const name = command.childForFieldName("name")?.text ?? "";
-  const codeFlags = interpreters[name.split("/").pop() ?? ""];
+  const children = command.namedChildren.filter(
+    (child): child is Node =>
+      child !== null &&
+      child.type !== "command_name" &&
+      child.type !== "variable_assignment" &&
+      !REDIRECT_NODE_TYPES.has(child.type),
+  );
+
+  let interpreter = name;
+  let args = children;
+  if (!interpreters[interpreter.split("/").pop() ?? ""] && INTERPRETER_WRAPPERS.has(name)) {
+    // A wrapper's first non-option, non-assignment argument is its command.
+    // Do not guess through option arguments such as `env -S`: those remain
+    // fail-closed review rather than being misclassified.
+    const index = children.findIndex(
+      (child) => !child.text.startsWith("-") && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(child.text),
+    );
+    if (index < 0) return undefined;
+    interpreter = children[index].text;
+    args = children.slice(index + 1);
+  }
+
+  const codeFlags = interpreters[interpreter.split("/").pop() ?? ""];
   if (!codeFlags?.length) return undefined;
 
-  const args = command.namedChildren.filter(
-    (child): child is Node => child !== null && child.type !== "command_name",
-  );
   for (let i = 0; i < args.length; i++) {
     for (const flag of codeFlags) {
       if (args[i].text === flag && i + 1 < args.length) {
         return { script: literalText(args[i + 1]) };
+      }
+      // Short options accept an attached payload (`python -c'...'` and
+      // `node -p1+1`); retain its source text for the judge rather than
+      // treating that executable inline code as an ordinary argument.
+      if (flag.startsWith("-") && !flag.startsWith("--") && args[i].text.startsWith(flag)) {
+        return { script: args[i].text.slice(flag.length) };
       }
       if (args[i].text.startsWith(`${flag}=`)) {
         return { script: args[i].text.slice(flag.length + 1) };
@@ -223,13 +257,16 @@ function detectAdHocScript(
   const onlyOptions = args.every((arg) => arg.text.startsWith("-"));
   if (!onlyOptions) return undefined;
 
-  if (container.type === "redirected_statement") {
-    const heredoc = container.namedChildren.find((child) => child?.type === "heredoc_redirect");
-    const body = heredoc?.namedChildren.find(
-      (child) => child?.type === "heredoc_body" || child?.type === "simple_heredoc_body",
-    );
-    if (body) return { script: body.text };
-  }
+  const redirects = container.namedChildren;
+  const heredoc = redirects.find((child) => child?.type === "heredoc_redirect");
+  const body = heredoc?.namedChildren.find(
+    (child) => child?.type === "heredoc_body" || child?.type === "simple_heredoc_body",
+  );
+  if (body) return { script: body.text };
+
+  const hereString = redirects.find((child) => child?.type === "herestring_redirect");
+  const hereStringBody = hereString?.namedChildren[0];
+  if (hereStringBody) return { script: literalText(hereStringBody) };
 
   const pipeline = container.parent;
   if (pipeline?.type === "pipeline" && pipeline.namedChildren[0]?.id !== container.id) {
