@@ -382,12 +382,45 @@ test("interpreter with a file argument is a plain command; the judge is never ca
   }
 });
 
-test("heredoc into an interpreter routes its body to the judge", async () => {
-  const { judge, calls } = fakeJudge(nonCritical);
-  const command = "python <<EOF\nprint(1)\nEOF";
-  assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow", via: "judge" });
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].script, "print(1)\n");
+test("heredocs into interpreters route their body to the judge", async () => {
+  for (const [command, script] of [
+    ["python <<EOF\nprint(1)\nEOF", "print(1)\n"],
+    // This is the reported command shape. Tree-sitter correctly recognizes
+    // it as a heredoc even though the indented terminator becomes body text.
+    [
+      "python3 <<'PY'\n import sys, platform\n print(\"inline python ok\", sys.version.split()[0], platform.system())\n PY",
+      "import sys, platform\n print(\"inline python ok\", sys.version.split()[0], platform.system())\n ",
+    ],
+  ] as const) {
+    const { judge, calls } = fakeJudge(nonCritical);
+    assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow", via: "judge" });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].script, script);
+  }
+});
+
+test("here-strings and attached short code flags route to the judge", async () => {
+  for (const [command, script] of [
+    ['python3 <<< "print(1)"', "print(1)"],
+    ["python3 -c'print(1)'", "'print(1)'"],
+    ["node -p1+1", "1+1"],
+  ] as const) {
+    const { judge, calls } = fakeJudge(nonCritical);
+    assert.deepEqual(await decide(command, config, deps(judge)), { kind: "allow", via: "judge" });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].script, script);
+  }
+});
+
+test("direct interpreter wrappers cannot bypass the judge", async () => {
+  for (const command of ['env python3 -c "print(1)"', 'command python3 -c "print(1)"']) {
+    const { judge, calls } = fakeJudge(nonCritical);
+    assert.deepEqual(await decide(command, cfg({ allow: [".*"] }), deps(judge)), {
+      kind: "allow",
+      via: "judge",
+    });
+    assert.equal(calls.length, 1);
+  }
 });
 
 test("heredoc into a non-interpreter stays a plain command", async () => {
