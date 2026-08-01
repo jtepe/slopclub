@@ -592,8 +592,8 @@ test("write tool targeting a protected path is denied", () => {
   for (const target of [
     ".pi/marquardt.json",
     "/repo/project/.pi/marquardt.json",
-    "/home/user/.pi/marquardt.json",
-    "~/.pi/marquardt.json",
+    "/home/user/.pi/agent/marquardt.json",
+    "~/.pi/agent/marquardt.json",
     "~/.bashrc",
     "/home/user/.zshrc",
     "~/.profile",

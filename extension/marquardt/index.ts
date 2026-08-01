@@ -27,9 +27,10 @@
  * denied; a redirect whose destination the engine cannot read statically
  * fails closed to review. Writes anywhere else pass through untouched.
  *
- * Guard config loads from `.pi/marquardt.json` in the project and in the
- * user's home directory: `{ "allow": [], "humanReview": [], "deny": [],
- * "interpreters": {}, "protectedPaths": [] }`. List entries are anchored
+ * Guard config loads from `.pi/marquardt.json` in the project and
+ * `~/.pi/agent/marquardt.json` for the user: `{ "allow": [],
+ * "humanReview": [], "deny": [], "interpreters": {}, "protectedPaths": [] }`.
+ * List entries are anchored
  * full-segment regexes; `interpreters` maps interpreter names to their code
  * flags and overrides the built-in table per name; `protectedPaths` extends
  * the built-in protected set and can never shrink it.

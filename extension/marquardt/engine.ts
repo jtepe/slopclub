@@ -67,6 +67,7 @@ export const DEFAULT_INTERPRETERS: InterpreterTable = {
 
 export const DEFAULT_PROTECTED_PATHS: string[] = [
   ".pi/marquardt.json",
+  "~/.pi/agent/marquardt.json",
   ".git/hooks",
   "~/.bashrc",
   "~/.bash_profile",
