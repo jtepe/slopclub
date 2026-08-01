@@ -38,17 +38,39 @@
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { giveVerdict, decideWrite, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
 import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
 import { badge, reviewOutcome, type DecisionOutcome } from "./decision-ui.ts";
+import { ReviewQueue } from "./review-queue.ts";
 
 const CHOICE_ACCEPT = "accept (run once)";
 const CHOICE_REJECT = "reject";
 const CHOICE_ALLOW = "add to allow list (always run)";
 const CHOICE_DENY = "add to deny list (always refuse)";
+const DECISION_ENTRY = "marquardt-decision";
+
+interface DecisionEntry {
+  outcome: DecisionOutcome;
+  command: string;
+}
 
 export default function (pi: ExtensionAPI) {
+  // Tool calls in a batch can reach this handler concurrently, but Pi's UI
+  // supports one dialog at a time. Keep each command's complete review flow
+  // atomic so no prompt is replaced by a later sibling.
+  const reviews = new ReviewQueue();
+
+  pi.registerEntryRenderer<DecisionEntry>(DECISION_ENTRY, (entry, _options, theme) => {
+    const data = entry.data;
+    return new Text(
+      `${badge(data.outcome)} ${theme.bold("marquardt")}: ${data.command}`,
+      0,
+      0,
+    );
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     const env = { cwd: ctx.cwd, home: homedir() };
 
@@ -72,6 +94,9 @@ export default function (pi: ExtensionAPI) {
     // POC: every surfaced decision leads with an outcome badge — the outcome
     // label on an outcome-specific background color (see decision-ui.ts).
     const show = (outcome: DecisionOutcome, type: "info" | "warning" | "error") => {
+      // Notifications are transient; retain every outcome in the transcript
+      // as well, including outcomes from parallel tool batches.
+      pi.appendEntry<DecisionEntry>(DECISION_ENTRY, { outcome, command: event.input.command });
       if (ctx.hasUI) ctx.ui.notify(`${badge(outcome)} ${event.input.command}`, type);
     };
 
@@ -84,63 +109,65 @@ export default function (pi: ExtensionAPI) {
       return { block: true, reason: verdict.message };
     }
 
-    const segments = verdict.segments ?? [];
-    const segmentLines = segments.length
-      ? `\n\nsegments:\n${segments.map((s) => `  ${s}`).join("\n")}`
-      : "\n\nsegments: (could not parse — failing closed)";
-    const judgeNote = verdict.explanation ? `\n\njudge: ${verdict.explanation}` : "";
-    const detail = `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}${judgeNote}`;
-    const reviewTitle = `${badge(reviewOutcome(verdict.reason))} marquardt: review bash command`;
+    return reviews.run(async () => {
+      const segments = verdict.segments ?? [];
+      const segmentLines = segments.length
+        ? `\n\nsegments:\n${segments.map((s) => `  ${s}`).join("\n")}`
+        : "\n\nsegments: (could not parse — failing closed)";
+      const judgeNote = verdict.explanation ? `\n\njudge: ${verdict.explanation}` : "";
+      const detail = `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}${judgeNote}`;
+      const reviewTitle = `${badge(reviewOutcome(verdict.reason))} marquardt: review bash command`;
 
-    // Without parsed segments there is no anchored pattern to persist, so
-    // the prompt degrades to plain accept/reject.
-    if (segments.length === 0) {
-      const accepted = await ctx.ui.confirm(reviewTitle, detail);
-      if (!accepted) {
+      // Without parsed segments there is no anchored pattern to persist, so
+      // the prompt degrades to plain accept/reject.
+      if (segments.length === 0) {
+        const accepted = await ctx.ui.confirm(reviewTitle, detail);
+        if (!accepted) {
+          show("rejected-human", "info");
+          return { block: true, reason: POLICY_DENIAL_MESSAGE };
+        }
+        show("approved-human", "info");
+        return;
+      }
+
+      const choice = await ctx.ui.select(`${reviewTitle}\n\n${detail}`, [
+        CHOICE_ACCEPT,
+        CHOICE_REJECT,
+        CHOICE_ALLOW,
+        CHOICE_DENY,
+      ]);
+
+      if (choice === CHOICE_ACCEPT) {
+        show("approved-human", "info");
+        return;
+      }
+      if (choice !== CHOICE_ALLOW && choice !== CHOICE_DENY) {
+        show("rejected-human", "info");
+        return { block: true, reason: POLICY_DENIAL_MESSAGE };
+      }
+
+      const list: TeachableList = choice === CHOICE_ALLOW ? "allow" : "deny";
+      const scope = await ctx.ui.select(`Add to ${list} list at which scope?`, [
+        "project",
+        "user",
+      ]);
+      if (scope !== "project" && scope !== "user") {
+        show("rejected-human", "info");
+        return { block: true, reason: POLICY_DENIAL_MESSAGE };
+      }
+
+      try {
+        persistPatterns(scope as ConfigScope, env.cwd, list, patternsForSegments(segments));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { block: true, reason: `guard config update failed: ${message}` };
+      }
+
+      if (list === "deny") {
         show("rejected-human", "info");
         return { block: true, reason: POLICY_DENIAL_MESSAGE };
       }
       show("approved-human", "info");
-      return;
-    }
-
-    const choice = await ctx.ui.select(`${reviewTitle}\n\n${detail}`, [
-      CHOICE_ACCEPT,
-      CHOICE_REJECT,
-      CHOICE_ALLOW,
-      CHOICE_DENY,
-    ]);
-
-    if (choice === CHOICE_ACCEPT) {
-      show("approved-human", "info");
-      return;
-    }
-    if (choice !== CHOICE_ALLOW && choice !== CHOICE_DENY) {
-      show("rejected-human", "info");
-      return { block: true, reason: POLICY_DENIAL_MESSAGE };
-    }
-
-    const list: TeachableList = choice === CHOICE_ALLOW ? "allow" : "deny";
-    const scope = await ctx.ui.select(`Add to ${list} list at which scope?`, [
-      "project",
-      "user",
-    ]);
-    if (scope !== "project" && scope !== "user") {
-      show("rejected-human", "info");
-      return { block: true, reason: POLICY_DENIAL_MESSAGE };
-    }
-
-    try {
-      persistPatterns(scope as ConfigScope, env.cwd, list, patternsForSegments(segments));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { block: true, reason: `guard config update failed: ${message}` };
-    }
-
-    if (list === "deny") {
-      show("rejected-human", "info");
-      return { block: true, reason: POLICY_DENIAL_MESSAGE };
-    }
-    show("approved-human", "info");
+    });
   });
 }
