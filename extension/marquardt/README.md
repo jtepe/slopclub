@@ -81,6 +81,10 @@ Persisted patterns are exact, regex-escaped matches of the reviewed
 segments — teaching the guard never widens policy beyond what you saw. You
 can hand-edit the config afterwards to generalize a pattern.
 
+Concurrent review flows are presented one at a time in call order. Each
+surfaced outcome is retained once in the session log with its badge and
+command; allow-listed commands still run silently.
+
 ## Configuration
 
 Guard config is read from two files, both optional:
