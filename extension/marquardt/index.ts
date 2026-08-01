@@ -97,7 +97,7 @@ export default function (pi: ExtensionAPI) {
     if (segments.length === 0) {
       const accepted = await ctx.ui.confirm(reviewTitle, detail);
       if (!accepted) {
-        show("rejected-human", "warning");
+        show("rejected-human", "info");
         return { block: true, reason: POLICY_DENIAL_MESSAGE };
       }
       show("approved-human", "info");
@@ -116,7 +116,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     if (choice !== CHOICE_ALLOW && choice !== CHOICE_DENY) {
-      show("rejected-human", "warning");
+      show("rejected-human", "info");
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
     }
 
@@ -126,7 +126,7 @@ export default function (pi: ExtensionAPI) {
       "user",
     ]);
     if (scope !== "project" && scope !== "user") {
-      show("rejected-human", "warning");
+      show("rejected-human", "info");
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
     }
 
@@ -138,7 +138,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (list === "deny") {
-      show("rejected-human", "warning");
+      show("rejected-human", "info");
       return { block: true, reason: POLICY_DENIAL_MESSAGE };
     }
     show("approved-human", "info");
