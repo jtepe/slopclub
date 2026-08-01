@@ -85,7 +85,7 @@ def open_pdf(path: str) -> pymupdf.Document:
         die(f"file not found: {path}")
     try:
         doc = pymupdf.open(p)
-    except Exception as exc:
+    except (pymupdf.FileDataError, pymupdf.FileNotFoundError) as exc:
         die(f"cannot open {path}: {exc}")
     if doc.needs_pass:
         die(f"{path} is password-protected")
@@ -133,7 +133,7 @@ def image_dims(path: str) -> str:
     try:
         pix = pymupdf.Pixmap(path)
         return f"{pix.width}x{pix.height}px"
-    except Exception:
+    except pymupdf.mupdf.FzErrorBase:
         return ""
 
 
