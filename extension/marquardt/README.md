@@ -89,7 +89,7 @@ command; allow-listed commands still run silently.
 
 Guard config is read from two files, both optional:
 
-- **User scope:** `~/.pi/marquardt.json`
+- **User scope:** `~/.pi/agent/marquardt.json`
 - **Project scope:** `<project>/.pi/marquardt.json`
 
 The two files are merged additively (user + project + built-in defaults);

@@ -11,7 +11,7 @@ import {
 export type ConfigScope = "project" | "user";
 export type TeachableList = "allow" | "deny";
 
-export const USER_CONFIG_PATH = join(homedir(), ".pi", "marquardt.json");
+export const USER_CONFIG_PATH = join(homedir(), ".pi", "agent", "marquardt.json");
 
 export function projectConfigPath(projectDir: string): string {
   return join(projectDir, ".pi", "marquardt.json");
