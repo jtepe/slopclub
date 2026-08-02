@@ -43,9 +43,10 @@ export function resolveJudgeModel(
   available: Model<Api>[],
   configured: string | undefined,
 ): Model<Api> | undefined {
-  if (!current || !configured) return undefined;
+  if (!configured) return undefined;
   const separator = configured.indexOf("/");
-  const provider = separator === -1 ? current.provider : configured.slice(0, separator);
+  if (separator === -1 && !current) return undefined;
+  const provider = separator === -1 ? current!.provider : configured.slice(0, separator);
   const id = separator === -1 ? configured : configured.slice(separator + 1);
   if (!id) return undefined;
   return available.find(
