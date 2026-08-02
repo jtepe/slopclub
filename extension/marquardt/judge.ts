@@ -63,9 +63,6 @@ function extractJson(text: string): unknown {
   }
 }
 
-// The model is explicit configuration, not inferred from model names. Retry
-// policy otherwise lives in the engine, and schema validation happens at its
-// schema gate.
 export function createJudge(ctx: ExtensionContext, configuredModel?: string): JudgeFn {
   return async (input) => {
     const model = resolveJudgeModel(ctx.model, ctx.modelRegistry.getAvailable(), configuredModel);

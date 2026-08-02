@@ -13,7 +13,7 @@
  *
  * Ad-hoc scripts — inline code handed to a known interpreter via a code
  * flag (`python -c`, `sh -c`, ...), a heredoc, or a stdin pipe — are triaged
- * by an explicitly configured judge LLM. Non-critical
+ * by a judge LLM. Non-critical
  * scripts run without prompting; critical scripts stop at review with the
  * judge's explanation. A failed or malformed judge call escalates to review
  * annotated "judge unavailable". `python foo.py` (a file argument, no

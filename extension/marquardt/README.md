@@ -49,9 +49,8 @@ An **ad-hoc script** is inline code handed to a known interpreter — via a
 code flag (`python -c '...'`, including attached forms such as `node -p1+1`),
 a heredoc, a here-string, or a stdin pipe. Direct interpreter wrappers such
 as `env python -c '...'` and `command python -c '...'` are also recognized.
-These are triaged by the explicitly configured **judge LLM**. The judge must
-be a text-capable model from an available provider; the guard never infers it
-from model names or switches models implicitly:
+These are triaged by the configured **judge LLM**. The judge must
+be a text-capable model from an available provider:
 
 - **non-critical** scripts run without prompting;
 - **critical** scripts stop at human review, annotated with the judge's
@@ -114,8 +113,7 @@ Required for inline-script judging. Set this to the exact model id on the
 active provider, or use the `provider/model-id` form to select a model from a
 different provider. The model must be text-capable and available. Project
 scope overrides user scope. If it is missing or unavailable, inline scripts
-fail closed to human review; there is no model-name substring matching or
-fallback model selection.
+fail closed to human review.
 
 ### `allow` / `humanReview` / `deny`
 
