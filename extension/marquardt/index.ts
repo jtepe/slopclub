@@ -13,7 +13,7 @@
  *
  * Ad-hoc scripts — inline code handed to a known interpreter via a code
  * flag (`python -c`, `sh -c`, ...), a heredoc, or a stdin pipe — are triaged
- * by a judge LLM on the same provider the agent already uses. Non-critical
+ * by an explicitly configured judge LLM. Non-critical
  * scripts run without prompting; critical scripts stop at review with the
  * judge's explanation. A failed or malformed judge call escalates to review
  * annotated "judge unavailable". `python foo.py` (a file argument, no
@@ -29,7 +29,8 @@
  *
  * Guard config loads from `.pi/marquardt.json` in the project and
  * `~/.pi/agent/marquardt.json` for the user: `{ "allow": [],
- * "humanReview": [], "deny": [], "interpreters": {}, "protectedPaths": [] }`.
+ * "humanReview": [], "deny": [], "interpreters": {}, "protectedPaths": [],
+ * "judgeModel": "provider/model-id" }`.
  * List entries are anchored
  * full-segment regexes; `interpreters` maps interpreter names to their code
  * flags and overrides the built-in table per name; `protectedPaths` extends
@@ -88,7 +89,7 @@ export default function (pi: ExtensionAPI) {
     const config = loadGuardConfig(env.cwd);
     const verdict = await giveVerdict(event.input.command, config, {
       interactive: ctx.hasUI,
-      judge: createJudge(ctx),
+      judge: createJudge(ctx, config.judgeModel),
       env,
     });
 

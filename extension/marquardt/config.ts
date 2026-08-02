@@ -23,6 +23,7 @@ interface ConfigFile {
   deny: string[];
   interpreters: InterpreterTable;
   protectedPaths: string[];
+  judgeModel?: string;
 }
 
 function emptyConfig(): ConfigFile {
@@ -63,6 +64,9 @@ function readConfigFile(path: string): ConfigFile {
       deny: stringList(record.deny),
       interpreters: interpreterTable(record.interpreters),
       protectedPaths: stringList(record.protectedPaths),
+      judgeModel: typeof record.judgeModel === "string" && record.judgeModel.trim()
+        ? record.judgeModel.trim()
+        : undefined,
     };
   } catch {
     return emptyConfig();
@@ -115,5 +119,7 @@ export function loadGuardConfig(projectDir: string): GuardConfig {
       ...user.protectedPaths,
       ...project.protectedPaths,
     ],
+    // Project configuration takes precedence when both scopes specify it.
+    judgeModel: project.judgeModel ?? user.judgeModel,
   };
 }
