@@ -17,6 +17,8 @@ export interface GuardConfig {
   deny: string[];
   interpreters: InterpreterTable;
   protectedPaths: string[];
+  /** Explicit provider-local model id used for inline-script judging. */
+  judgeModel?: string;
 }
 
 export interface PathEnv {

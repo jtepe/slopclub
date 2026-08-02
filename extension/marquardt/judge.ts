@@ -36,36 +36,21 @@ ${input.script}
 -----END UNTRUSTED SCRIPT-----`;
 }
 
-const SMALL_MODEL_HINTS = ["haiku", "mini", "flash", "lite", "small", "nano", "luna"];
-
-// Same provider as the main agent (never a new endpoint), preferring a
-// small fast model from that provider's catalog.
-export function pickJudgeModel(
+// Resolve the configured model exactly. A bare model id is interpreted on the
+// active provider; use `provider/model` when selecting a different provider.
+export function resolveJudgeModel(
   current: Model<Api> | undefined,
   available: Model<Api>[],
+  configured: string | undefined,
 ): Model<Api> | undefined {
-  if (!current) return undefined;
-  const siblings = available.filter(
-    (model) => model.provider === current.provider && model.input.includes("text"),
+  if (!current || !configured) return undefined;
+  const separator = configured.indexOf("/");
+  const provider = separator === -1 ? current.provider : configured.slice(0, separator);
+  const id = separator === -1 ? configured : configured.slice(separator + 1);
+  if (!id) return undefined;
+  return available.find(
+    (model) => model.provider === provider && model.id === id && model.input.includes("text"),
   );
-  const small = siblings.find((model) =>
-    SMALL_MODEL_HINTS.some((hint) => `${model.id} ${model.name}`.toLowerCase().includes(hint)),
-  );
-  return small ?? current;
-}
-
-// Provider catalogs can contain stale, restricted, or retired small models.
-// Keep the cost-saving preference, but always retain the active model as a
-// known-working fallback on the identical provider configuration.
-export function pickJudgeModels(
-  current: Model<Api> | undefined,
-  available: Model<Api>[],
-): Model<Api>[] {
-  if (!current) return [];
-  const preferred = pickJudgeModel(current, available);
-  return preferred && (preferred.id !== current.id || preferred.provider !== current.provider)
-    ? [preferred, current]
-    : [current];
 }
 
 function extractJson(text: string): unknown {
@@ -78,54 +63,56 @@ function extractJson(text: string): unknown {
   }
 }
 
-// Judge transport tries the preferred small model, then the active model as
-// a same-provider fallback; retry policy otherwise lives in the engine, and
-// schema validation happens at the engine's schema gate.
-export function createJudge(ctx: ExtensionContext): JudgeFn {
+// The model is explicit configuration, not inferred from model names. Retry
+// policy otherwise lives in the engine, and schema validation happens at its
+// schema gate.
+export function createJudge(ctx: ExtensionContext, configuredModel?: string): JudgeFn {
   return async (input) => {
-    const models = pickJudgeModels(ctx.model, ctx.modelRegistry.getAvailable());
-    if (models.length === 0) throw new Error("no model configured");
-
-    const failures: string[] = [];
-    for (const model of models) {
-      const label = `${model.provider}/${model.id}`;
-      try {
-        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-        if (!auth.ok) throw new Error(`authentication failed: ${auth.error}`);
-
-        const response = await completeSimple(
-          model,
-          {
-            systemPrompt: JUDGE_SYSTEM_PROMPT,
-            messages: [
-              { role: "user", content: judgePrompt(input, ctx.cwd), timestamp: Date.now() },
-            ],
-          },
-          {
-            apiKey: auth.apiKey,
-            headers: auth.headers,
-            env: auth.env,
-            maxTokens: JUDGE_MAX_TOKENS,
-            timeoutMs: JUDGE_TIMEOUT_MS,
-            maxRetries: 0,
-          },
-        );
-        if (response.stopReason === "error" || response.stopReason === "aborted") {
-          throw new Error(response.errorMessage ?? `request ${response.stopReason}`);
-        }
-
-        const text = response.content
-          .filter((part): part is Extract<(typeof response.content)[number], { type: "text" }> =>
-            part.type === "text",
-          )
-          .map((part) => part.text)
-          .join("");
-        return extractJson(text);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push(`${label}: ${message}`);
-      }
+    const model = resolveJudgeModel(ctx.model, ctx.modelRegistry.getAvailable(), configuredModel);
+    if (!model) {
+      throw new Error(
+        configuredModel
+          ? `configured judge model unavailable: ${configuredModel}`
+          : "judge model not configured (set judgeModel in marquardt.json)",
+      );
     }
-    throw new Error(failures.join("; "));
+
+    const label = `${model.provider}/${model.id}`;
+    try {
+      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!auth.ok) throw new Error(`authentication failed: ${auth.error}`);
+
+      const response = await completeSimple(
+        model,
+        {
+          systemPrompt: JUDGE_SYSTEM_PROMPT,
+          messages: [
+            { role: "user", content: judgePrompt(input, ctx.cwd), timestamp: Date.now() },
+          ],
+        },
+        {
+          apiKey: auth.apiKey,
+          headers: auth.headers,
+          env: auth.env,
+          maxTokens: JUDGE_MAX_TOKENS,
+          timeoutMs: JUDGE_TIMEOUT_MS,
+          maxRetries: 0,
+        },
+      );
+      if (response.stopReason === "error" || response.stopReason === "aborted") {
+        throw new Error(response.errorMessage ?? `request ${response.stopReason}`);
+      }
+
+      const text = response.content
+        .filter((part): part is Extract<(typeof response.content)[number], { type: "text" }> =>
+          part.type === "text",
+        )
+        .map((part) => part.text)
+        .join("");
+      return extractJson(text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${label}: ${message}`);
+    }
   };
 }
