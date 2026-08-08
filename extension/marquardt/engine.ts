@@ -322,8 +322,6 @@ export type JudgeVerdict =
   | { kind: "non-critical" }
   | { kind: "critical"; explanation: string };
 
-// The judge is deliberately only invoked from the review UI. Retry transient
-// failures once, but never turn an invalid response into an approval.
 export async function consultJudge(command: string, judge: JudgeFn): Promise<JudgeVerdict> {
   let failureExplanation = JUDGE_UNAVAILABLE_EXPLANATION;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -345,8 +343,6 @@ export async function consultJudge(command: string, judge: JudgeFn): Promise<Jud
   throw new Error(failureExplanation);
 }
 
-// Segment classification is purely policy based. The judge is a human-review
-// option, never an automatic execution path.
 function classifySegment(segment: Segment, config: GuardConfig): Verdict {
   if (matchesAny(segment.text, config.deny)) {
     return { kind: "deny", message: POLICY_DENIAL_MESSAGE };
