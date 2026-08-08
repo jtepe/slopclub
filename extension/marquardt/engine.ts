@@ -2,22 +2,19 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path/posix";
 import { Parser, Language, type Node } from "web-tree-sitter";
 
-export type ReviewReason = "list-hit" | "fallthrough" | "judge-critical" | "judge-failure";
+export type ReviewReason = "list-hit" | "fallthrough";
 
 export type Verdict =
-  | { kind: "allow"; via?: "judge" }
-  | { kind: "human-review"; reason: ReviewReason; explanation?: string; segments?: string[] }
+  | { kind: "allow" }
+  | { kind: "human-review"; reason: ReviewReason; segments?: string[] }
   | { kind: "deny"; message: string };
-
-export type InterpreterTable = Record<string, string[]>;
 
 export interface GuardConfig {
   allow: string[];
   humanReview: string[];
   deny: string[];
-  interpreters: InterpreterTable;
   protectedPaths: string[];
-  /** Explicit provider-local model id used for inline-script judging. */
+  /** Explicit provider-local model id used for manual judging. */
   judgeModel?: string;
 }
 
@@ -27,15 +24,13 @@ export interface PathEnv {
 }
 
 export interface JudgeInput {
-  script: string;
-  commandLine: string;
+  command: string;
 }
 
 export type JudgeFn = (input: JudgeInput) => Promise<unknown>;
 
 export interface EngineDeps {
   interactive: boolean;
-  judge: JudgeFn;
   env: PathEnv;
 }
 
@@ -46,26 +41,10 @@ export interface DecisionLog {
   protectedWrite: boolean;
   segments: Array<{
     text: string;
-    adHocScript: boolean;
     verdict?: Verdict;
   }>;
   verdict: Verdict;
 }
-
-export const DEFAULT_INTERPRETERS: InterpreterTable = {
-  sh: ["-c"],
-  bash: ["-c"],
-  zsh: ["-c"],
-  dash: ["-c"],
-  ksh: ["-c"],
-  python: ["-c"],
-  python2: ["-c"],
-  python3: ["-c"],
-  node: ["-e", "--eval", "-p", "--print"],
-  ruby: ["-e"],
-  perl: ["-e", "-E"],
-  php: ["-r"],
-};
 
 export const DEFAULT_PROTECTED_PATHS: string[] = [
   ".pi/marquardt.json",
@@ -197,100 +176,11 @@ export function decideWrite(target: string, config: GuardConfig, env: PathEnv): 
 
 interface Segment {
   text: string;
-  adHoc?: { script: string };
 }
 
 type ParseResult =
   | { ok: true; segments: Segment[]; protectedWrite: boolean }
   | { ok: false };
-
-function literalText(node: Node): string {
-  if (node.type === "raw_string" || node.type === "string") return node.text.slice(1, -1);
-  if (node.type === "ansi_c_string") return node.text.slice(2, -1);
-  return node.text;
-}
-
-// A segment is an ad-hoc script iff a known interpreter receives inline code:
-// a code flag with a payload, a heredoc, or a stdin pipe. An interpreter given
-// a script file stays a plain command; the heredoc and pipe branches therefore
-// require every argument to be an option, so the interpreter must be reading
-// the payload itself.
-// Shell builtins and env commonly prefix an interpreter invocation. They do
-// not turn its code into a file, so recognize the direct wrapper form too;
-// otherwise a broad allow rule for (for example) `env .*` could bypass the
-// judge entirely.
-const INTERPRETER_WRAPPERS = new Set(["env", "command", "exec", "nohup", "nice", "time"]);
-const REDIRECT_NODE_TYPES = new Set(["file_redirect", "heredoc_redirect", "herestring_redirect"]);
-
-function detectAdHocScript(
-  command: Node,
-  container: Node,
-  interpreters: InterpreterTable,
-): Segment["adHoc"] {
-  const name = command.childForFieldName("name")?.text ?? "";
-  const children = command.namedChildren.filter(
-    (child): child is Node =>
-      child !== null &&
-      child.type !== "command_name" &&
-      child.type !== "variable_assignment" &&
-      !REDIRECT_NODE_TYPES.has(child.type),
-  );
-
-  let interpreter = name;
-  let args = children;
-  if (!interpreters[interpreter.split("/").pop() ?? ""] && INTERPRETER_WRAPPERS.has(name)) {
-    // A wrapper's first non-option, non-assignment argument is its command.
-    // Do not guess through option arguments such as `env -S`: those remain
-    // fail-closed review rather than being misclassified.
-    const index = children.findIndex(
-      (child) => !child.text.startsWith("-") && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(child.text),
-    );
-    if (index < 0) return undefined;
-    interpreter = children[index].text;
-    args = children.slice(index + 1);
-  }
-
-  const codeFlags = interpreters[interpreter.split("/").pop() ?? ""];
-  if (!codeFlags?.length) return undefined;
-
-  for (let i = 0; i < args.length; i++) {
-    for (const flag of codeFlags) {
-      if (args[i].text === flag && i + 1 < args.length) {
-        return { script: literalText(args[i + 1]) };
-      }
-      // Short options accept an attached payload (`python -c'...'` and
-      // `node -p1+1`); retain its source text for the judge rather than
-      // treating that executable inline code as an ordinary argument.
-      if (flag.startsWith("-") && !flag.startsWith("--") && args[i].text.startsWith(flag)) {
-        return { script: args[i].text.slice(flag.length) };
-      }
-      if (args[i].text.startsWith(`${flag}=`)) {
-        return { script: args[i].text.slice(flag.length + 1) };
-      }
-    }
-  }
-
-  const onlyOptions = args.every((arg) => arg.text.startsWith("-"));
-  if (!onlyOptions) return undefined;
-
-  const redirects = container.namedChildren;
-  const heredoc = redirects.find((child) => child?.type === "heredoc_redirect");
-  const body = heredoc?.namedChildren.find(
-    (child) => child?.type === "heredoc_body" || child?.type === "simple_heredoc_body",
-  );
-  if (body) return { script: body.text };
-
-  const hereString = redirects.find((child) => child?.type === "herestring_redirect");
-  const hereStringBody = hereString?.namedChildren[0];
-  if (hereStringBody) return { script: literalText(hereStringBody) };
-
-  const pipeline = container.parent;
-  if (pipeline?.type === "pipeline" && pipeline.namedChildren[0]?.id !== container.id) {
-    return { script: pipeline.text };
-  }
-
-  return undefined;
-}
 
 const WRITE_REDIRECT_OPERATORS = new Set([">", ">>", ">|", "&>", "&>>", ">&", "<>"]);
 
@@ -371,10 +261,7 @@ async function parseSegments(
     if (node.type === "command") {
       const parent = node.parent;
       const container = parent?.type === "redirected_statement" ? parent : node;
-      segments.push({
-        text: container.text,
-        adHoc: detectAdHocScript(node, container, config.interpreters),
-      });
+      segments.push({ text: container.text });
     }
     for (const child of node.namedChildren) {
       if (child) visit(child);
@@ -431,13 +318,18 @@ function parseJudgeAnswer(output: unknown): JudgeAnswer | undefined {
   return { verdict: record.verdict, explanation: record.explanation };
 }
 
-async function judgeSegment(segment: Segment, script: string, deps: EngineDeps): Promise<Verdict> {
-  const input: JudgeInput = { script, commandLine: segment.text };
+export type JudgeVerdict =
+  | { kind: "non-critical" }
+  | { kind: "critical"; explanation: string };
+
+// The judge is deliberately only invoked from the review UI. Retry transient
+// failures once, but never turn an invalid response into an approval.
+export async function consultJudge(command: string, judge: JudgeFn): Promise<JudgeVerdict> {
   let failureExplanation = JUDGE_UNAVAILABLE_EXPLANATION;
   for (let attempt = 0; attempt < 2; attempt++) {
     let output: unknown;
     try {
-      output = await deps.judge(input);
+      output = await judge({ command });
     } catch (error) {
       failureExplanation = judgeFailureExplanation(error);
       continue;
@@ -447,31 +339,20 @@ async function judgeSegment(segment: Segment, script: string, deps: EngineDeps):
       failureExplanation = `${JUDGE_UNAVAILABLE_EXPLANATION}: invalid judge response`;
       continue;
     }
-    if (answer.verdict === "non-critical") return { kind: "allow", via: "judge" };
-    return { kind: "human-review", reason: "judge-critical", explanation: answer.explanation };
+    if (answer.verdict === "non-critical") return { kind: "non-critical" };
+    return { kind: "critical", explanation: answer.explanation };
   }
-  return {
-    kind: "human-review",
-    reason: "judge-failure",
-    explanation: failureExplanation,
-  };
+  throw new Error(failureExplanation);
 }
 
-// Deny and review lists outrank the judge; the allow list does not, so a
-// broad allow pattern can never exempt inline code from triage.
-async function classifySegment(
-  segment: Segment,
-  config: GuardConfig,
-  deps: EngineDeps,
-): Promise<Verdict> {
+// Segment classification is purely policy based. The judge is a human-review
+// option, never an automatic execution path.
+function classifySegment(segment: Segment, config: GuardConfig): Verdict {
   if (matchesAny(segment.text, config.deny)) {
     return { kind: "deny", message: POLICY_DENIAL_MESSAGE };
   }
   if (matchesAny(segment.text, config.humanReview)) {
     return { kind: "human-review", reason: "list-hit" };
-  }
-  if (segment.adHoc) {
-    return judgeSegment(segment, segment.adHoc.script, deps);
   }
   if (matchesAny(segment.text, config.allow)) {
     return { kind: "allow" };
@@ -510,28 +391,19 @@ export async function decide(
     verdict = { kind: "human-review", reason: "fallthrough" };
   } else if (parsed.protectedWrite) {
     protectedWrite = true;
-    segments = parsed.segments.map((segment) => ({
-      text: segment.text,
-      adHocScript: Boolean(segment.adHoc),
-    }));
+    segments = parsed.segments.map((segment) => ({ text: segment.text }));
     verdict = { kind: "deny", message: PROTECTED_PATH_DENIAL_MESSAGE };
   } else {
     const verdicts = await Promise.all(
-      parsed.segments.map((segment) => classifySegment(segment, config, deps)),
+      parsed.segments.map((segment) => classifySegment(segment, config)),
     );
     segments = parsed.segments.map((segment, index) => ({
       text: segment.text,
-      adHocScript: Boolean(segment.adHoc),
       verdict: verdicts[index],
     }));
     verdict = mostRestrictive(verdicts);
     if (verdict.kind === "human-review") {
       verdict = { ...verdict, segments: parsed.segments.map((segment) => segment.text) };
-    } else if (verdict.kind === "allow") {
-      // An allow that involved the judge is a distinct outcome ("approved
-      // by judge") from a pure list allow, so provenance survives merging.
-      const judged = verdicts.some((candidate) => candidate.kind === "allow" && candidate.via === "judge");
-      verdict = judged ? { kind: "allow", via: "judge" } : { kind: "allow" };
     }
   }
 

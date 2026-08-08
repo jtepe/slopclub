@@ -2,10 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  DEFAULT_INTERPRETERS,
   DEFAULT_PROTECTED_PATHS,
   type GuardConfig,
-  type InterpreterTable,
 } from "./engine.ts";
 
 export type ConfigScope = "project" | "user";
@@ -21,28 +19,18 @@ interface ConfigFile {
   allow: string[];
   humanReview: string[];
   deny: string[];
-  interpreters: InterpreterTable;
   protectedPaths: string[];
   judgeModel?: string;
 }
 
 function emptyConfig(): ConfigFile {
-  return { allow: [], humanReview: [], deny: [], interpreters: {}, protectedPaths: [] };
+  return { allow: [], humanReview: [], deny: [], protectedPaths: [] };
 }
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : [];
-}
-
-function interpreterTable(value: unknown): InterpreterTable {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const table: InterpreterTable = {};
-  for (const [name, flags] of Object.entries(value)) {
-    table[name] = stringList(flags);
-  }
-  return table;
 }
 
 // A missing or malformed file contributes empty lists, which is the most
@@ -62,7 +50,6 @@ function readConfigFile(path: string): ConfigFile {
       allow: stringList(record.allow),
       humanReview: stringList(record.humanReview),
       deny: stringList(record.deny),
-      interpreters: interpreterTable(record.interpreters),
       protectedPaths: stringList(record.protectedPaths),
       judgeModel: typeof record.judgeModel === "string" && record.judgeModel.trim()
         ? record.judgeModel.trim()
@@ -113,7 +100,6 @@ export function loadGuardConfig(projectDir: string): GuardConfig {
     allow: [...user.allow, ...project.allow],
     humanReview: [...user.humanReview, ...project.humanReview],
     deny: [...user.deny, ...project.deny],
-    interpreters: { ...DEFAULT_INTERPRETERS, ...user.interpreters, ...project.interpreters },
     protectedPaths: [
       ...DEFAULT_PROTECTED_PATHS,
       ...user.protectedPaths,

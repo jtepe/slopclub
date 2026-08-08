@@ -31,35 +31,22 @@ Per segment, precedence is:
 
 1. **Deny list** match → deny.
 2. **Human-review list** match → human review.
-3. **Ad-hoc script** (see below) → triaged by the judge.
-4. **Allow list** match → allow.
-5. Nothing matched (**fallthrough**) → human review.
-
-Note that the deny and review lists outrank the judge, but the allow list
-does not — a broad allow pattern can never exempt inline code from triage.
+3. **Allow list** match → allow.
+4. Nothing matched (**fallthrough**) → human review.
 
 The engine fails closed: a command that cannot be parsed, contains shell
 constructs the engine does not confidently understand (loops, conditionals,
 assignments, arithmetic, ...), or redirects into a destination it cannot read
 statically (variables, substitutions) goes to human review as a whole.
 
-### Ad-hoc scripts and the judge
+### Manual judge consultation
 
-An **ad-hoc script** is inline code handed to a known interpreter — via a
-code flag (`python -c '...'`, including attached forms such as `node -p1+1`),
-a heredoc, a here-string, or a stdin pipe. Direct interpreter wrappers such
-as `env python -c '...'` and `command python -c '...'` are also recognized.
-These are triaged by the configured **judge LLM**. The judge must
-be a text-capable model from an available provider:
-
-- **non-critical** scripts run without prompting;
-- **critical** scripts stop at human review, annotated with the judge's
-  explanation;
-- a failed, unavailable, or malformed judge call escalates to review annotated
-  `judge unavailable: <provider/model and error>`.
-
-`python foo.py` (a file argument, no inline payload) is *not* an ad-hoc
-script; it stays a plain command and goes through the lists.
+The configured **judge LLM** is available only as an option during human
+review. It receives every parsed segment joined into one complete command
+chain. A **non-critical** verdict allows the command immediately. A
+**critical** verdict displays the judge's explanation and leaves the final
+decision to you; that review no longer offers another judge invocation. A
+failed or malformed judge call remains at review and can be retried.
 
 ### The review prompt
 
@@ -99,9 +86,6 @@ the most restrictive reading. All keys are optional:
   "allow": ["git status", "git diff( .*)?", "ls( -[a-zA-Z]+)*( \\S+)?"],
   "humanReview": ["git push( .*)?"],
   "deny": ["sudo .*", "rm -rf /.*"],
-  "interpreters": {
-    "deno": ["eval"]
-  },
   "protectedPaths": [".env", "secrets/"],
   "judgeModel": "provider/model-id"
 }
@@ -109,11 +93,11 @@ the most restrictive reading. All keys are optional:
 
 ### `judgeModel`
 
-Required for inline-script judging. Set this to the exact model id on the
+Used for manual command-chain judging. Set this to the exact model id on the
 active provider, or use the `provider/model-id` form to select a model from a
 different provider. The model must be text-capable and available. Project
-scope overrides user scope. If it is missing or unavailable, inline scripts
-fail closed to human review.
+scope overrides user scope. If it is missing or unavailable, manual judge
+consultation remains unavailable while normal list classification is unchanged.
 
 ### `allow` / `humanReview` / `deny`
 
@@ -122,20 +106,6 @@ patterns (an entry `p` matches like `^(?:p)$`). A pattern that fails to
 compile matches nothing, so a broken entry can only tighten policy. Matching
 is against the segment's literal text including any redirects, e.g.
 `echo hi > out.txt` is one segment.
-
-### `interpreters`
-
-Maps interpreter names to the flags that accept inline code, used for ad-hoc
-script detection. Entries override the built-in table per name. Defaults:
-
-| Interpreter | Code flags |
-| --- | --- |
-| `sh`, `bash`, `zsh`, `dash`, `ksh` | `-c` |
-| `python`, `python2`, `python3` | `-c` |
-| `node` | `-e`, `--eval`, `-p`, `--print` |
-| `ruby` | `-e` |
-| `perl` | `-e`, `-E` |
-| `php` | `-r` |
 
 ### Protected paths
 
@@ -153,27 +123,13 @@ PATH-shim directories (`~/.local/bin`, `~/bin`).
 
 ## Debugging execution flows
 
-Use the standalone debugger to inspect the exact parser, list, judge, and
-final-verdict path without starting pi:
+Use the standalone debugger to inspect parser, list, and final-verdict paths
+without starting pi:
 
 ```bash
 npm run debug:marquardt -- "git status && python -c 'print(1)'"
-npm run debug:marquardt -- --judge critical "python -c 'rm -rf /tmp/demo'"
 npm run debug:marquardt -- --headless "terraform apply"
 ```
 
 It prints a JSON trace containing the loaded config, parsed segments,
-per-segment verdicts, and final verdict. By default it simulates an
-unavailable judge, so it never sends a model request; use `--judge critical`
-or `--judge non-critical` to exercise those branches. With no command it
-opens a REPL, which can be launched in Helix with `:sh npm run
-debug:marquardt`; enter shell commands there, then use `:quit` to exit. Pass
-`--cwd <dir>` to load another project's config.
-
-## Limitations
-
-The guard vets what the bash tool is asked to run; it is not a sandbox.
-Notably, writing a script or Makefile with ordinary file tools and then
-triggering it via an allow-listed command (the *write-then-execute bypass*)
-is accepted residual risk outside the protected-path set — full containment
-is a sandbox's job.
+per-segment verdicts, and final verdict. With no command it opens a REPL.

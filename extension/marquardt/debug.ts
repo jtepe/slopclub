@@ -5,7 +5,6 @@
  * Run from a terminal (including Helix's `:sh`) without starting pi:
  *
  *   node extension/marquardt/debug.ts "git status && python -c 'print(1)'"
- *   node extension/marquardt/debug.ts --judge critical
  */
 
 import { homedir } from "node:os";
@@ -13,14 +12,11 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { loadGuardConfig } from "./config.ts";
-import { decide, type JudgeFn } from "./engine.ts";
-
-type JudgeMode = "critical" | "non-critical" | "unavailable";
+import { decide } from "./engine.ts";
 
 interface Options {
   cwd: string;
   interactive: boolean;
-  judge: JudgeMode;
   command?: string;
 }
 
@@ -31,8 +27,6 @@ Print a JSON trace of marquardt's decision path. With no command, starts a REPL.
 Options:
   --cwd <dir>                         Load project config from this directory
   --headless                           Simulate a non-interactive pi session
-  --judge <critical|non-critical|unavailable>
-                                       Simulate the ad-hoc-script judge (default: unavailable)
   -h, --help                           Show this help
 
 REPL commands: :help, :quit`;
@@ -40,7 +34,6 @@ REPL commands: :help, :quit`;
 export function parseOptions(args: string[], cwd = process.cwd()): Options | "help" {
   let projectDir = cwd;
   let interactive = true;
-  let judge: JudgeMode = "unavailable";
   const command: string[] = [];
 
   for (let index = 0; index < args.length; index++) {
@@ -48,12 +41,10 @@ export function parseOptions(args: string[], cwd = process.cwd()): Options | "he
     if (arg === "-h" || arg === "--help") return "help";
     if (arg === "--headless") {
       interactive = false;
-    } else if (arg === "--cwd" || arg === "--judge") {
+    } else if (arg === "--cwd") {
       const value = args[++index];
       if (!value) throw new Error(`${arg} requires a value`);
-      if (arg === "--cwd") projectDir = resolve(value);
-      else if (value === "critical" || value === "non-critical" || value === "unavailable") judge = value;
-      else throw new Error(`invalid judge mode: ${value}`);
+      projectDir = resolve(value);
     } else if (arg.startsWith("-")) {
       throw new Error(`unknown option: ${arg}`);
     } else {
@@ -63,32 +54,20 @@ export function parseOptions(args: string[], cwd = process.cwd()): Options | "he
   return { cwd: projectDir, interactive, judge, command: command.length ? command.join(" ") : undefined };
 }
 
-function simulatedJudge(mode: JudgeMode): JudgeFn {
-  return async () => {
-    if (mode === "unavailable") throw new Error("simulated unavailable judge");
-    return {
-      verdict: mode,
-      explanation: `simulated ${mode} judge verdict`,
-    };
-  };
-}
-
 export async function inspect(command: string, options: Omit<Options, "command">) {
   const config = loadGuardConfig(options.cwd);
   const decision = await decide(command, config, {
     interactive: options.interactive,
-    judge: simulatedJudge(options.judge),
     env: { cwd: options.cwd, home: homedir() },
   });
 
   return {
     command,
-    session: { cwd: options.cwd, interactive: options.interactive, judge: options.judge },
+    session: { cwd: options.cwd, interactive: options.interactive },
     config: {
       allow: config.allow,
       humanReview: config.humanReview,
       deny: config.deny,
-      interpreters: Object.keys(config.interpreters),
       protectedPaths: config.protectedPaths,
     },
     ...decision,
