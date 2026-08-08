@@ -41,12 +41,11 @@ statically (variables, substitutions) goes to human review as a whole.
 
 ### Manual judge consultation
 
-The configured **judge LLM** is available only as an option during human
-review. It receives every parsed segment joined into one complete command
-chain. A **non-critical** verdict allows the command immediately. A
-**critical** verdict displays the judge's explanation and leaves the final
-decision to you; that review no longer offers another judge invocation. A
-failed or malformed judge call remains at review and can be retried.
+The configured **judge LLM** is available as an option during human review.
+It receives every parsed segment joined into one complete command chain. A
+**non-critical** verdict allows the command immediately. A **critical**
+verdict displays the judge's explanation and leaves the final decision to
+you. A failed or malformed judge call remains at review and can be retried.
 
 ### The review prompt
 
