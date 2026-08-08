@@ -11,13 +11,10 @@
  * non-interactive sessions anything needing review is denied. Non-bash
  * tool calls pass through untouched.
  *
- * Ad-hoc scripts — inline code handed to a known interpreter via a code
- * flag (`python -c`, `sh -c`, ...), a heredoc, or a stdin pipe — are triaged
- * by a judge LLM. Non-critical
- * scripts run without prompting; critical scripts stop at review with the
- * judge's explanation. A failed or malformed judge call escalates to review
- * annotated "judge unavailable". `python foo.py` (a file argument, no
- * inline payload) stays a plain command and goes through the lists.
+ * During human review, the user can consult a judge LLM about the complete
+ * command chain. A non-critical verdict allows the call immediately; a
+ * critical verdict displays its explanation and leaves the final decision to
+ * the user without offering another judge invocation for that chain.
  *
  * Writes targeting the protected-path set are refused from every tool, so
  * the agent cannot disarm the guard that constrains it: the guard's own
@@ -29,19 +26,22 @@
  *
  * Guard config loads from `.pi/marquardt.json` in the project and
  * `~/.pi/agent/marquardt.json` for the user: `{ "allow": [],
- * "humanReview": [], "deny": [], "interpreters": {}, "protectedPaths": [],
- * "judgeModel": "provider/model-id" }`.
- * List entries are anchored
- * full-segment regexes; `interpreters` maps interpreter names to their code
- * flags and overrides the built-in table per name; `protectedPaths` extends
- * the built-in protected set and can never shrink it.
+ * "humanReview": [], "deny": [], "protectedPaths": [], "judgeModel":
+ * "provider/model-id" }`. List entries are anchored full-segment regexes;
+ * `protectedPaths` extends the built-in protected set and can never shrink it.
  */
 
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { giveVerdict, decideWrite, patternsForSegments, POLICY_DENIAL_MESSAGE } from "./engine.ts";
+import {
+  consultJudge,
+  giveVerdict,
+  decideWrite,
+  patternsForSegments,
+  POLICY_DENIAL_MESSAGE,
+} from "./engine.ts";
 import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
 import { badge, reviewOutcome, type DecisionOutcome } from "./decision-ui.ts";
@@ -51,6 +51,7 @@ const CHOICE_ACCEPT = "accept (run once)";
 const CHOICE_REJECT = "reject";
 const CHOICE_ALLOW = "add to allow list (always run)";
 const CHOICE_DENY = "add to deny list (always refuse)";
+const CHOICE_JUDGE = "consult judge";
 const DECISION_ENTRY = "marquardt-decision";
 
 interface DecisionEntry {
@@ -89,7 +90,6 @@ export default function (pi: ExtensionAPI) {
     const config = loadGuardConfig(env.cwd);
     const verdict = await giveVerdict(event.input.command, config, {
       interactive: ctx.hasUI,
-      judge: createJudge(ctx, config.judgeModel),
       env,
     });
 
@@ -99,10 +99,7 @@ export default function (pi: ExtensionAPI) {
       pi.appendEntry<DecisionEntry>(DECISION_ENTRY, { outcome, command: event.input.command });
     };
 
-    if (verdict.kind === "allow") {
-      if (verdict.via === "judge") show("allowed-judge");
-      return;
-    }
+    if (verdict.kind === "allow") return;
     if (verdict.kind === "deny") {
       show("denied-policy");
       return { block: true, reason: verdict.message };
@@ -113,14 +110,17 @@ export default function (pi: ExtensionAPI) {
       const segmentLines = segments.length
         ? `\n\nsegments:\n${segments.map((s) => `  ${s}`).join("\n")}`
         : "\n\nsegments: (could not parse — failing closed)";
-      const judgeNote = verdict.explanation ? `\n\njudge: ${verdict.explanation}` : "";
-      const detail = `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}${judgeNote}`;
-      const reviewTitle = `${badge(reviewOutcome(verdict.reason))} review bash command`;
+      let judgeNote = "";
+      let judgeWasCritical = false;
+      const detail = () =>
+        `${event.input.command}${segmentLines}\n\nverdict path: ${verdict.reason}${judgeNote}`;
+      const reviewTitle = () =>
+        `${badge(judgeWasCritical ? "judge-critical" : reviewOutcome(verdict.reason))} review bash command`;
 
       // Without parsed segments there is no anchored pattern to persist, so
       // the prompt degrades to plain accept/reject.
       if (segments.length === 0) {
-        const accepted = await ctx.ui.confirm(reviewTitle, detail);
+        const accepted = await ctx.ui.confirm(reviewTitle(), detail());
         if (!accepted) {
           show("rejected-human");
           return { block: true, reason: POLICY_DENIAL_MESSAGE };
@@ -129,12 +129,30 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const choice = await ctx.ui.select(`${reviewTitle}\n\n${detail}`, [
-        CHOICE_ACCEPT,
-        CHOICE_REJECT,
-        CHOICE_ALLOW,
-        CHOICE_DENY,
-      ]);
+      let choice: string | undefined;
+      while (true) {
+        choice = await ctx.ui.select(`${reviewTitle()}\n\n${detail()}`, [
+          CHOICE_ACCEPT,
+          CHOICE_REJECT,
+          CHOICE_ALLOW,
+          CHOICE_DENY,
+          ...(judgeWasCritical ? [] : [CHOICE_JUDGE]),
+        ]);
+        if (choice !== CHOICE_JUDGE) break;
+
+        try {
+          const judge = await consultJudge(segments.join("\n"), createJudge(ctx, config.judgeModel));
+          if (judge.kind === "non-critical") {
+            show("allowed-judge");
+            return;
+          }
+          judgeWasCritical = true;
+          judgeNote = `\n\njudge: ${judge.explanation}`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          judgeNote = `\n\njudge unavailable: ${message}`;
+        }
+      }
 
       if (choice === CHOICE_ACCEPT) {
         show("approved-human");

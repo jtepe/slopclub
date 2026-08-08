@@ -21,7 +21,6 @@
  * | approved-human    | blue   | #2563eb | approval by a person               |
  * | needs-review      | yellow | #a16207 | caution, decision pending          |
  * | judge-critical    | orange | #c2410c | escalated caution (judge flagged)  |
- * | judge-unavailable | gray   | #52525b | degraded, no judgment available    |
  * | denied-policy     | red    | #dc2626 | conventional "stop"                |
  * | rejected-human    | purple | #7c3aed | refusal by a person, not by policy |
  *
@@ -37,7 +36,6 @@ export type DecisionOutcome =
   | "approved-human"
   | "needs-review"
   | "judge-critical"
-  | "judge-unavailable"
   | "denied-policy"
   | "rejected-human";
 
@@ -55,7 +53,6 @@ export const OUTCOME_STYLES: Record<DecisionOutcome, OutcomeStyle> = {
   "approved-human": { label: "APPROVED · HUMAN", bg: "#2563eb", fg: "#ffffff" },
   "needs-review": { label: "NEEDS REVIEW", bg: "#a16207", fg: "#ffffff" },
   "judge-critical": { label: "JUDGE · CRITICAL", bg: "#c2410c", fg: "#ffffff" },
-  "judge-unavailable": { label: "JUDGE UNAVAILABLE", bg: "#52525b", fg: "#ffffff" },
   "denied-policy": { label: "DENIED · POLICY", bg: "#dc2626", fg: "#ffffff" },
   "rejected-human": { label: "REJECTED · HUMAN", bg: "#7c3aed", fg: "#ffffff" },
 };
@@ -81,8 +78,6 @@ export function reviewOutcome(reason: ReviewReason): DecisionOutcome {
   switch (reason) {
     case "judge-critical":
       return "judge-critical";
-    case "judge-failure":
-      return "judge-unavailable";
     default:
       return "needs-review";
   }

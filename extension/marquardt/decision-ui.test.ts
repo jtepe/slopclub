@@ -23,7 +23,6 @@ test("badge sets the outcome's background color and resets at the end", () => {
 
 test("review reasons map to their outcome badges", () => {
   assert.equal(reviewOutcome("judge-critical"), "judge-critical");
-  assert.equal(reviewOutcome("judge-failure"), "judge-unavailable");
   assert.equal(reviewOutcome("list-hit"), "needs-review");
   assert.equal(reviewOutcome("fallthrough"), "needs-review");
 });
