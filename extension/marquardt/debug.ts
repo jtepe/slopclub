@@ -51,7 +51,7 @@ export function parseOptions(args: string[], cwd = process.cwd()): Options | "he
       command.push(arg);
     }
   }
-  return { cwd: projectDir, interactive, judge, command: command.length ? command.join(" ") : undefined };
+  return { cwd: projectDir, interactive, command: command.length ? command.join(" ") : undefined };
 }
 
 export async function inspect(command: string, options: Omit<Options, "command">) {
