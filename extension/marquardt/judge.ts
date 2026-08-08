@@ -77,11 +77,21 @@ export function createJudge(ctx: ExtensionContext, configuredModel?: string): Ju
 
     const label = `${model.provider}/${model.id}`;
     try {
-      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok) throw new Error(`authentication failed: ${auth.error}`);
+      const resolution = await ctx.modelRegistry.getProviderAuth(model.provider);
+      if (!resolution) {
+        throw new Error(`authentication failed: no auth for ${model.provider}`);
+      }
+
+      // Some providers, notably GitHub Copilot, resolve a request-specific
+      // endpoint during authentication. The normal model runtime applies this
+      // URL before sending the request, but nested judge calls use the
+      // compatibility API directly and must apply it themselves.
+      const requestModel = resolution.auth.baseUrl
+        ? { ...model, baseUrl: resolution.auth.baseUrl }
+        : model;
 
       const response = await completeSimple(
-        model,
+        requestModel,
         {
           systemPrompt: JUDGE_SYSTEM_PROMPT,
           messages: [
@@ -89,9 +99,9 @@ export function createJudge(ctx: ExtensionContext, configuredModel?: string): Ju
           ],
         },
         {
-          apiKey: auth.apiKey,
-          headers: auth.headers,
-          env: auth.env,
+          apiKey: resolution.auth.apiKey,
+          headers: resolution.auth.headers,
+          env: resolution.env,
           maxTokens: JUDGE_MAX_TOKENS,
           timeoutMs: JUDGE_TIMEOUT_MS,
           maxRetries: 0,
