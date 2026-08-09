@@ -28,3 +28,16 @@ test("invalid judge tracking formats warn and disable tracking", (t) => {
   assert.equal(loadGuardConfig(project, (message) => warnings.push(message)).trackJudgeCallFormat, undefined);
   assert.equal(warnings.length, 1);
 });
+
+test("an invalid project tracking format falls back to valid user config", (t) => {
+  const project = projectWithConfig(t, { trackJudgeCallFormat: "vscode" });
+  const userConfigPath = join(project, "user-marquardt.json");
+  writeFileSync(userConfigPath, JSON.stringify({ trackJudgeCallFormat: "github-copilot" }));
+  const warnings: string[] = [];
+
+  assert.equal(
+    loadGuardConfig(project, (message) => warnings.push(message), userConfigPath).trackJudgeCallFormat,
+    "github-copilot",
+  );
+  assert.equal(warnings.length, 1);
+});

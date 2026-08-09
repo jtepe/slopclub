@@ -22,10 +22,7 @@ interface ConfigFile {
   deny: string[];
   protectedPaths: string[];
   judgeModel?: string;
-  // null distinguishes an invalid project value from a missing one: project
-  // config takes precedence, so an invalid project value disables tracking
-  // instead of falling back to a valid user value.
-  trackJudgeCallFormat?: JudgeCallTrackingFormat | null;
+  trackJudgeCallFormat?: JudgeCallTrackingFormat;
 }
 
 function emptyConfig(): ConfigFile {
@@ -51,15 +48,14 @@ function readConfigFile(path: string, warn: (message: string) => void): ConfigFi
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return emptyConfig();
     const record = parsed as Record<string, unknown>;
-    let trackJudgeCallFormat: JudgeCallTrackingFormat | null | undefined;
+    let trackJudgeCallFormat: JudgeCallTrackingFormat | undefined;
     if (Object.hasOwn(record, "trackJudgeCallFormat")) {
       if (record.trackJudgeCallFormat === "github-copilot") {
         trackJudgeCallFormat = record.trackJudgeCallFormat;
       } else {
         warn(
-          `invalid trackJudgeCallFormat in ${path}: expected \"github-copilot\"; judge call tracking disabled`,
+          `invalid trackJudgeCallFormat in ${path}: expected \"github-copilot\"; value ignored`,
         );
-        trackJudgeCallFormat = null;
       }
     }
     return {
@@ -111,8 +107,9 @@ export function persistPatterns(
 export function loadGuardConfig(
   projectDir: string,
   warn: (message: string) => void = console.warn,
+  userConfigPath = USER_CONFIG_PATH,
 ): GuardConfig {
-  const user = readConfigFile(USER_CONFIG_PATH, warn);
+  const user = readConfigFile(userConfigPath, warn);
   const project = readConfigFile(projectConfigPath(projectDir), warn);
   // Config files can only extend the protected set, never shrink it: the
   // defaults are always present, so no config state disarms the guard.
@@ -127,8 +124,6 @@ export function loadGuardConfig(
     ],
     // Project configuration takes precedence when both scopes specify it.
     judgeModel: project.judgeModel ?? user.judgeModel,
-    trackJudgeCallFormat: project.trackJudgeCallFormat === undefined
-      ? user.trackJudgeCallFormat ?? undefined
-      : project.trackJudgeCallFormat ?? undefined,
+    trackJudgeCallFormat: project.trackJudgeCallFormat ?? user.trackJudgeCallFormat,
   };
 }
