@@ -22,8 +22,9 @@ interface ConfigFile {
   deny: string[];
   protectedPaths: string[];
   judgeModel?: string;
-  // null means the key was present but invalid, so a lower-precedence value
-  // must not silently enable tracking.
+  // null distinguishes an invalid project value from a missing one: project
+  // config takes precedence, so an invalid project value disables tracking
+  // instead of falling back to a valid user value.
   trackJudgeCallFormat?: JudgeCallTrackingFormat | null;
 }
 
