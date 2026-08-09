@@ -101,7 +101,8 @@ consultation remains unavailable while normal list classification is unchanged.
 
 Set `trackJudgeCallFormat` to `"github-copilot"` to opt into writing judge calls
 as Copilot CLI sessions under `~/.copilot/session-state/`, where Agentsview can
-include their token usage and cost. Missing or invalid values disable tracking.
+include their token usage and cost. Invalid values issue a warning and are
+ignored; tracking remains disabled when neither scope has a valid value.
 
 ### `allow` / `humanReview` / `deny`
 
