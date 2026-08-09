@@ -86,7 +86,8 @@ the most restrictive reading. All keys are optional:
   "humanReview": ["git push( .*)?"],
   "deny": ["sudo .*", "rm -rf /.*"],
   "protectedPaths": [".env", "secrets/"],
-  "judgeModel": "provider/model-id"
+  "judgeModel": "provider/model-id",
+  "trackJudgeCallFormat": "github-copilot"
 }
 ```
 
@@ -97,6 +98,10 @@ active provider, or use the `provider/model-id` form to select a model from a
 different provider. The model must be text-capable and available. Project
 scope overrides user scope. If it is missing or unavailable, manual judge
 consultation remains unavailable while normal list classification is unchanged.
+
+Set `trackJudgeCallFormat` to `"github-copilot"` to opt into writing judge calls
+as Copilot CLI sessions under `~/.copilot/session-state/`, where Agentsview can
+include their token usage and cost. Missing or invalid values disable tracking.
 
 ### `allow` / `humanReview` / `deny`
 
