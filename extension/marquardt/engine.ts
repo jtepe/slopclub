@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path/posix";
 import { Parser, Language, type Node } from "web-tree-sitter";
+import type { JudgeCallTrackingFormat } from "./judge-tracking.ts";
 
 export type ReviewReason = "list-hit" | "fallthrough";
 
@@ -16,6 +17,8 @@ export interface GuardConfig {
   protectedPaths: string[];
   /** Explicit provider-local model id used for manual judging. */
   judgeModel?: string;
+  /** Optional external session format used to account for judge calls. */
+  trackJudgeCallFormat?: JudgeCallTrackingFormat;
 }
 
 export interface PathEnv {

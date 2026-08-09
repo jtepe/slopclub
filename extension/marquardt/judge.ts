@@ -2,6 +2,10 @@ import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { JudgeFn, JudgeInput } from "./engine.ts";
+import {
+  trackJudgeCall,
+  type JudgeCallTrackingFormat,
+} from "./judge-tracking.ts";
 
 const JUDGE_MAX_TOKENS = 512;
 const JUDGE_TIMEOUT_MS = 30_000;
@@ -61,7 +65,11 @@ function extractJson(text: string): unknown {
   }
 }
 
-export function createJudge(ctx: ExtensionContext, configuredModel?: string): JudgeFn {
+export function createJudge(
+  ctx: ExtensionContext,
+  configuredModel?: string,
+  trackingFormat?: JudgeCallTrackingFormat,
+): JudgeFn {
   return async (input) => {
     const model = resolveJudgeModel(ctx.model, ctx.modelRegistry.getAvailable(), configuredModel);
     if (!model) {
@@ -87,12 +95,14 @@ export function createJudge(ctx: ExtensionContext, configuredModel?: string): Ju
         ? { ...model, baseUrl: resolution.auth.baseUrl }
         : model;
 
+      const prompt = judgePrompt(input, ctx.cwd);
+      const startedAt = Date.now();
       const response = await completeSimple(
         requestModel,
         {
           systemPrompt: JUDGE_SYSTEM_PROMPT,
           messages: [
-            { role: "user", content: judgePrompt(input, ctx.cwd), timestamp: Date.now() },
+            { role: "user", content: prompt, timestamp: startedAt },
           ],
         },
         {
@@ -104,6 +114,14 @@ export function createJudge(ctx: ExtensionContext, configuredModel?: string): Ju
           maxRetries: 0,
         },
       );
+      if (trackingFormat) {
+        try {
+          trackJudgeCall(trackingFormat, { cwd: ctx.cwd, prompt, response, startedAt });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`could not track judge call: ${message}`, "warning");
+        }
+      }
       if (response.stopReason === "error" || response.stopReason === "aborted") {
         throw new Error(response.errorMessage ?? `request ${response.stopReason}`);
       }

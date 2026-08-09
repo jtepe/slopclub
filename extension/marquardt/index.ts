@@ -76,9 +76,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => {
     const env = { cwd: ctx.cwd, home: homedir() };
+    const loadConfig = () => loadGuardConfig(
+      env.cwd,
+      (message) => ctx.ui.notify(message, "warning"),
+    );
 
     if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
-      const verdict = decideWrite(event.input.path, loadGuardConfig(env.cwd), env);
+      const verdict = decideWrite(event.input.path, loadConfig(), env);
       if (verdict.kind === "deny") {
         return { block: true, reason: verdict.message };
       }
@@ -87,7 +91,7 @@ export default function (pi: ExtensionAPI) {
 
     if (!isToolCallEventType("bash", event)) return;
 
-    const config = loadGuardConfig(env.cwd);
+    const config = loadConfig();
     const verdict = await giveVerdict(event.input.command, config, {
       interactive: ctx.hasUI,
       env,
@@ -141,7 +145,10 @@ export default function (pi: ExtensionAPI) {
         if (choice !== CHOICE_JUDGE) break;
 
         try {
-          const judge = await consultJudge(segments.join("\n"), createJudge(ctx, config.judgeModel));
+          const judge = await consultJudge(
+            segments.join("\n"),
+            createJudge(ctx, config.judgeModel, config.trackJudgeCallFormat),
+          );
           if (judge.kind === "non-critical") {
             show("allowed-judge");
             return;

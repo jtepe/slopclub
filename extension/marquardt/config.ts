@@ -5,6 +5,7 @@ import {
   DEFAULT_PROTECTED_PATHS,
   type GuardConfig,
 } from "./engine.ts";
+import type { JudgeCallTrackingFormat } from "./judge-tracking.ts";
 
 export type ConfigScope = "project" | "user";
 export type TeachableList = "allow" | "deny";
@@ -21,6 +22,9 @@ interface ConfigFile {
   deny: string[];
   protectedPaths: string[];
   judgeModel?: string;
+  // null means the key was present but invalid, so a lower-precedence value
+  // must not silently enable tracking.
+  trackJudgeCallFormat?: JudgeCallTrackingFormat | null;
 }
 
 function emptyConfig(): ConfigFile {
@@ -35,7 +39,7 @@ function stringList(value: unknown): string[] {
 
 // A missing or malformed file contributes empty lists, which is the most
 // restrictive reading: every command falls through to review.
-function readConfigFile(path: string): ConfigFile {
+function readConfigFile(path: string, warn: (message: string) => void): ConfigFile {
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
@@ -46,6 +50,17 @@ function readConfigFile(path: string): ConfigFile {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return emptyConfig();
     const record = parsed as Record<string, unknown>;
+    let trackJudgeCallFormat: JudgeCallTrackingFormat | null | undefined;
+    if (Object.hasOwn(record, "trackJudgeCallFormat")) {
+      if (record.trackJudgeCallFormat === "github-copilot") {
+        trackJudgeCallFormat = record.trackJudgeCallFormat;
+      } else {
+        warn(
+          `invalid trackJudgeCallFormat in ${path}: expected \"github-copilot\"; judge call tracking disabled`,
+        );
+        trackJudgeCallFormat = null;
+      }
+    }
     return {
       allow: stringList(record.allow),
       humanReview: stringList(record.humanReview),
@@ -54,6 +69,7 @@ function readConfigFile(path: string): ConfigFile {
       judgeModel: typeof record.judgeModel === "string" && record.judgeModel.trim()
         ? record.judgeModel.trim()
         : undefined,
+      trackJudgeCallFormat,
     };
   } catch {
     return emptyConfig();
@@ -91,9 +107,12 @@ export function persistPatterns(
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
 }
 
-export function loadGuardConfig(projectDir: string): GuardConfig {
-  const user = readConfigFile(USER_CONFIG_PATH);
-  const project = readConfigFile(projectConfigPath(projectDir));
+export function loadGuardConfig(
+  projectDir: string,
+  warn: (message: string) => void = console.warn,
+): GuardConfig {
+  const user = readConfigFile(USER_CONFIG_PATH, warn);
+  const project = readConfigFile(projectConfigPath(projectDir), warn);
   // Config files can only extend the protected set, never shrink it: the
   // defaults are always present, so no config state disarms the guard.
   return {
@@ -107,5 +126,8 @@ export function loadGuardConfig(projectDir: string): GuardConfig {
     ],
     // Project configuration takes precedence when both scopes specify it.
     judgeModel: project.judgeModel ?? user.judgeModel,
+    trackJudgeCallFormat: project.trackJudgeCallFormat === undefined
+      ? user.trackJudgeCallFormat ?? undefined
+      : project.trackJudgeCallFormat ?? undefined,
   };
 }
