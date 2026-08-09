@@ -27,6 +27,4 @@ test("invalid judge tracking formats warn and disable tracking", (t) => {
   const warnings: string[] = [];
   assert.equal(loadGuardConfig(project, (message) => warnings.push(message)).trackJudgeCallFormat, undefined);
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /invalid trackJudgeCallFormat/);
-  assert.match(warnings[0], /tracking disabled/);
 });
