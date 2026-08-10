@@ -121,32 +121,22 @@ export default function (pi: ExtensionAPI) {
       const reviewTitle = () =>
         `${badge(judgeWasCritical ? "judge-critical" : reviewOutcome(verdict.reason))} review bash command`;
 
-      // Without parsed segments there is no anchored pattern to persist, so
-      // the prompt degrades to plain accept/reject.
-      if (segments.length === 0) {
-        const accepted = await ctx.ui.confirm(reviewTitle(), detail());
-        if (!accepted) {
-          show("rejected-human");
-          return { block: true, reason: POLICY_DENIAL_MESSAGE };
-        }
-        show("approved-human");
-        return;
-      }
+      const judgeCommand = segments.length ? segments.join("\n") : event.input.command;
+      const choices = () => [
+        CHOICE_ACCEPT,
+        CHOICE_REJECT,
+        ...(segments.length ? [CHOICE_ALLOW, CHOICE_DENY] : []),
+        ...(judgeWasCritical ? [] : [CHOICE_JUDGE]),
+      ];
 
       let choice: string | undefined;
       while (true) {
-        choice = await ctx.ui.select(`${reviewTitle()}\n\n${detail()}`, [
-          CHOICE_ACCEPT,
-          CHOICE_REJECT,
-          CHOICE_ALLOW,
-          CHOICE_DENY,
-          ...(judgeWasCritical ? [] : [CHOICE_JUDGE]),
-        ]);
+        choice = await ctx.ui.select(`${reviewTitle()}\n\n${detail()}`, choices());
         if (choice !== CHOICE_JUDGE) break;
 
         try {
           const judge = await consultJudge(
-            segments.join("\n"),
+            judgeCommand,
             createJudge(ctx, config.judgeModel, config.trackJudgeCallFormat),
           );
           if (judge.kind === "non-critical") {
