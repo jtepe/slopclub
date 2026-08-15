@@ -27,6 +27,27 @@ from typing import Any, NoReturn
 import pymupdf
 import pymupdf4llm
 
+
+def enable_cid_unicode_fallback() -> None:
+    """Preserve extractable text when a PDF font has no ToUnicode map."""
+    cid_flag = getattr(
+        pymupdf,
+        "TEXT_CID_FOR_UNKNOWN_UNICODE",
+        getattr(pymupdf, "TEXT_USE_CID_FOR_UNKNOWN_UNICODE", 0),
+    )
+    document_layout = getattr(
+        getattr(pymupdf4llm, "helpers", None), "document_layout", None
+    )
+    if (
+        cid_flag
+        and document_layout is not None
+        and hasattr(document_layout, "FLAGS")
+    ):
+        document_layout.FLAGS |= cid_flag
+
+
+enable_cid_unicode_fallback()
+
 IMG_REF = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 IMG_ID = re.compile(r"^p(\d+)-img(\d+)$")
 
