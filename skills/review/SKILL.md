@@ -4,7 +4,7 @@ description: Review code changes from a range of commits. The purpose of the cha
 license: Apache-2.0
 metadata:
   author: Jonas Tepe
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Code Review Guide
@@ -16,7 +16,7 @@ Ensure the following is provided by the user. If any is lacking, ask the user to
 * __Description Of The Change__: The user provided a ticket/issue number, or, lacking that, a description of the purpose of the change. In case of a ticket/issue number, use existing tooling to retrieve it.
                                  Tooling depends on the format of the issue/ticket.
 * __Range Of Commits__: The user provides a range of commits that encompass the change.
-* __User Understanding__: The User must know the objective of the change on a non-technical level. Ensure the user does know by asking a couple of clarifying questions prompting the user to describe the change in their own words.
+* __User Understanding__: The User must know the objective of the change on a non-technical level. Ensure the user does know by asking a question prompting the user to describe the change in their own words.
 
 
 ## Review Process
@@ -51,11 +51,11 @@ For each criteria a finding must be *ranked* as
 
 ### Phase 3: Report
 
-The final report must be in markdown. List each review category separately. Then in each category present your findings from low to high. A finding should be in the following format:
-```markdown
+The final report must list each review category separately. For each category present your findings from low to high. A finding should be in the following format:
+```
 [rank]: <short description>
 Full description
-```
-Where `rank` is the rank (low, medium, high). The rank should be colored with `low` in green, `medium` in yellow, and `high` in red. `<short description>` names the finding in a short sentence.
-`Full description` describes the finding in multiple sentences, clearly describing where the problem is, why it is a problem,
-and, if possible, how it can be solved in you opinion.
+````
+Where `rank` is the rank (low, medium, high). The rank must be colored with `low` in green, `medium` in yellow, and `high` in red. `<short description>` names the finding in a short sentence.
+`Full description` describes the finding in multiple sentences, clearly describing where the problem is, why it is a problem, and, if possible, how it can be solved in you opinion.
+Finally, give a short judgement how well the issue/ticket or user description from the review prerequisites matches what was implemented by the change.
