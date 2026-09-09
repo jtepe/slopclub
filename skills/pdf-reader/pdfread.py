@@ -38,11 +38,7 @@ def enable_cid_unicode_fallback() -> None:
     document_layout = getattr(
         getattr(pymupdf4llm, "helpers", None), "document_layout", None
     )
-    if (
-        cid_flag
-        and document_layout is not None
-        and hasattr(document_layout, "FLAGS")
-    ):
+    if cid_flag and document_layout is not None and hasattr(document_layout, "FLAGS"):
         document_layout.FLAGS |= cid_flag
 
 
