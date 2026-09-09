@@ -10,7 +10,7 @@ verdict *before* anything executes:
 - **allow** — the command runs silently.
 - **deny** — the call is refused with `tool call denied by policy`.
 - **human review** — an interactive prompt shows the command and lets you
-  accept it once, reject it, or teach the guard by adding it to the allow or
+  accept it once, reject it with advice, or teach the guard by adding it to the allow or
   deny list. In non-interactive sessions, anything that would need review is
   denied instead.
 
@@ -55,7 +55,11 @@ segments, and how it got there (list hit, fallthrough, judge verdict). Your
 choices:
 
 - **accept (run once)** — run it this time; the guard asks again next time.
-- **reject** — refuse the call.
+- **reject and advice** — refuse the call and open Pi's multi-line editor to
+  explain why or suggest an alternative. The agent waits until you submit with
+  Enter, then receives `Tool call rejected with advice:` followed by your text.
+  Other command reviews wait too. Cancelling the editor or submitting blank
+  advice still refuses the call, reporting that no advice was provided.
 - **add to allow list (always run)** / **add to deny list (always refuse)** —
   persist one pattern per segment to the guard config at your choice of
   **project** or **user** scope. The addition takes effect immediately, so
