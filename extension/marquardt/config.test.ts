@@ -19,13 +19,16 @@ function projectWithConfig(t: TestContext, config: unknown): string {
 
 test("GitHub Copilot judge tracking can be enabled in project config", (t) => {
   const project = projectWithConfig(t, { trackJudgeCallFormat: "github-copilot" });
-  assert.equal(loadGuardConfig(project).trackJudgeCallFormat, "github-copilot");
+  assert.equal(loadGuardConfig(project, undefined, join(project, "absent-user-config.json")).trackJudgeCallFormat, "github-copilot");
 });
 
-test("invalid judge tracking formats warn and disable tracking", (t) => {
+test("invalid judge tracking formats warn and disable tracking without user config", (t) => {
   const project = projectWithConfig(t, { trackJudgeCallFormat: "vscode" });
   const warnings: string[] = [];
-  assert.equal(loadGuardConfig(project, (message) => warnings.push(message)).trackJudgeCallFormat, undefined);
+  assert.equal(
+    loadGuardConfig(project, (message) => warnings.push(message), join(project, "absent-user-config.json")).trackJudgeCallFormat,
+    undefined,
+  );
   assert.equal(warnings.length, 1);
 });
 
