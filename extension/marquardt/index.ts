@@ -4,8 +4,8 @@
  * Intercepts every bash tool call and produces a verdict before anything
  * executes. Allow-listed commands run silently, deny-listed commands are
  * refused with "tool call denied by policy", and everything else shows a
- * review prompt. Alongside accept and reject, the prompt can add the
- * command's segment patterns to the allow or deny list at project or user
+ * review prompt. Users can accept or reject with advice in Pi's editor, or add
+ * the command's segment patterns to the allow or deny list at project or user
  * scope; the addition persists to that scope's guard config file and takes
  * effect immediately, so the same command never asks again. In
  * non-interactive sessions anything needing review is denied. Non-bash
@@ -46,9 +46,10 @@ import { createJudge } from "./judge.ts";
 import { loadGuardConfig, persistPatterns, type ConfigScope, type TeachableList } from "./config.ts";
 import { badge, reviewOutcome, type DecisionOutcome } from "./decision-ui.ts";
 import { ReviewQueue } from "./review-queue.ts";
+import { rejectWithAdvice } from "./reject-advice.ts";
 
 const CHOICE_ACCEPT = "accept (run once)";
-const CHOICE_REJECT = "reject";
+const CHOICE_REJECT = "reject and advice";
 const CHOICE_ALLOW = "add to allow list (always run)";
 const CHOICE_DENY = "add to deny list (always refuse)";
 const CHOICE_JUDGE = "consult judge";
@@ -154,6 +155,11 @@ export default function (pi: ExtensionAPI) {
       if (choice === CHOICE_ACCEPT) {
         show("approved-human");
         return;
+      }
+      if (choice === CHOICE_REJECT) {
+        const result = await rejectWithAdvice(ctx.ui, event.input.command);
+        show("rejected-human");
+        return result;
       }
       if (choice !== CHOICE_ALLOW && choice !== CHOICE_DENY) {
         show("rejected-human");
